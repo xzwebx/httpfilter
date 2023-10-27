@@ -222,7 +222,6 @@ func (p *http)SetFieldMap(m map[string]interface{}) bool {
 	return true
 }
 func (p *http)CheckReq(c *gin.Context) {
-	o := c.Request.Header.Get("Origin")
 	if c.Request.Method == "OPTIONS" {
 		c.Abort()
 		return
