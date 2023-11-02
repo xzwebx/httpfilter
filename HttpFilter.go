@@ -261,15 +261,16 @@ func (p *http)CheckReq(c *gin.Context) {
 		return
 	}
 
-	var data interface{}
-	if err := c.ShouldBind(&data); err != nil {
-		rstType.Msg = []string{"NULL_MSG_BODY"}
-		retData := R.MSG(rstType)
-		c.JSON(200, retData)
-		c.Abort()
+	data, err := c.GetRawData()
+	if err != nil{
+		fmt.Println(err.Error())
 		return
 	}
-	retMsgData := p.cycleCheckParams(p.FieldMap[strconv.Itoa(int(reqMsgId))].(map[string]interface{}), data)
+	var body interface{}
+	_ = json.Unmarshal(data, &body)
+
+	c.Request.Body = ioutil.NopCloser(bytes.NewBuffer(data))
+	retMsgData := p.cycleCheckParams(p.FieldMap[strconv.Itoa(int(reqMsgId))].(map[string]interface{}), body)
 	if retMsgData != nil {
 		rstType.Msg = retMsgData
 		retData := R.MSG(rstType)
