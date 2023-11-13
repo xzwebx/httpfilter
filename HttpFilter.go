@@ -1,15 +1,17 @@
 package httpfilter
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/gin-gonic/gin"
+	"io/ioutil"
 	"math"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 )
-import "strconv"
-import "github.com/gin-gonic/gin"
 
 type Module struct {
 	AppUri string `json:"appUri"`
@@ -59,6 +61,7 @@ type RstType struct {
 type ResCode struct {
 	RstKey string `json:"rstKey"`
 	RstCode string `json:"rstCode"`
+	CodeDesc string `json:"codeDesc"`
 }
 type Tips struct {
 	Key string `json:"key"`
@@ -90,11 +93,12 @@ func (res *Response)SetTipsMap(m map[string]interface{}) bool {
 
 func (res *Response)MSG(params RstType) gin.H{
 	code := ""
+	msg := ""
 	if v, ok := res.ResCodeMap[params.CodeKey]; ok {
 		code = v.RstCode
+		msg = v.CodeDesc
 	}
 
-	msg := ""
 	if params.Msg == nil || params.Msg == "" {
 		if v, ok := res.TipsMap[params.CodeKey]; ok {
 			msg = v.Tips
