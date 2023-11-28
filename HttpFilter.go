@@ -185,14 +185,15 @@ func (p *http)SetRoutes(pGin *gin.Engine, moduleObjMap map[string]interface{}) {
 				fun := value.MethodByName(strings.ToUpper(method))
 				inputs := make([]reflect.Value, 2)
 				inputs[0] = reflect.ValueOf(subUri)
-				inputs[1] = reflect.ValueOf(moduleObjMap[module.Uri]).MethodByName(strings.Title(subUri))
-				defer func() {
-					if p := recover(); p != nil{
-						fmt.Println(p)
+				if !reflect.ValueOf(moduleObjMap[module.Uri]).IsValid() {
+					inputs[1] = reflect.ValueOf(WebCommResponse)
+				} else {
+					if !reflect.ValueOf(moduleObjMap[module.Uri]).MethodByName(strings.Title(subUri)).IsValid() {
 						inputs[1] = reflect.ValueOf(WebCommResponse)
-						fun.Call(inputs)
+					} else {
+						inputs[1] = reflect.ValueOf(moduleObjMap[module.Uri]).MethodByName(strings.Title(subUri))
 					}
-				}()
+				}
 				fun.Call(inputs)
 			}
 		}
@@ -286,81 +287,59 @@ func (p *http)CheckReq(c *gin.Context) {
 	c.Next()
 }
 func (p *http)cycleCheckParams(msgFieldMap map[string]interface{}, data interface{}) interface{}{
-	if msgFieldMap == nil || msgFieldMap["__FieldCfg"] == nil {
+	var retMsgData interface{} = nil
+
+	if msgFieldMap == nil {
 		return nil
 	}
 
-	resByte, _ := json.Marshal(msgFieldMap["__FieldCfg"])
 	var fCfgItem filedCfg
-	json.Unmarshal(resByte, &fCfgItem)
-	if fCfgItem.IfMust == "" {
-		return nil
+	isRoot := true
+	if msgFieldMap["__FieldCfg"] != nil {
+		isRoot = false
+		resByte, _ := json.Marshal(msgFieldMap["__FieldCfg"])
+		json.Unmarshal(resByte, &fCfgItem)
 	}
 
 	for key, value := range msgFieldMap {
+		if isRoot {
+			resByte, _ := json.Marshal(((value.(map[string]interface{}))["__FieldCfg"]))
+			json.Unmarshal(resByte, &fCfgItem)
+		}
+
+		if fCfgItem.FieldType == "STR" {
+			retMsgData = p.isStringOk(fCfgItem, data)
+		} else if fCfgItem.FieldType == "INT" {
+			retMsgData = p.isIntOk(fCfgItem, data)
+		} else if fCfgItem.FieldType == "OBJ" {
+			retMsgData = p.isObjOk(fCfgItem, data)
+		} else if fCfgItem.FieldType == "LIST" {
+			retMsgData = p.isListOk(fCfgItem, data)
+		}
+
+		if retMsgData != nil {
+			return retMsgData
+		}
+
 		if key == "__FieldCfg" {
-			if fCfgItem.FieldUrl == "" {
-				if fCfgItem.IfMust == "YES" {
-					if data == nil {
-						return []string{"NULL_MSG_BODY"}
-					}
-
-					if fCfgItem.FieldType == "OBJ" {
-						m, ok := data.(map[string]interface{})
-						if !ok {
-							return []string{"WRONG_OBJ_BODY"}
-						}
-
-						if len(m) == 0 {
-							return []string{"NULL_MSG_BODY"}
-						}
-					}
-
-					if fCfgItem.FieldType == "LIST" {
-						l, ok := data.([]interface{})
-						if !ok {
-							return []string{"WRONG_OBJ_BODY"}
-						}
-
-						if len(l) == 0 {
-							return []string{"NULL_MSG_BODY"}
-						}
-					}
-				}
-			} else {
-				if fCfgItem.IfMust == "NO" && (data == nil || data == "") {
-					return nil
-				}
-
-				var retMsgData interface{} = nil
-				if fCfgItem.FieldType == "STR" {
-					retMsgData = p.isStringOk(fCfgItem, data)
-				} else if fCfgItem.FieldType == "INT" {
-					retMsgData = p.isIntOk(fCfgItem, data)
-				} else if fCfgItem.FieldType == "OBJ" {
-					retMsgData = p.isObjOk(fCfgItem, data)
-				} else if fCfgItem.FieldType == "LIST" {
-					retMsgData = p.isListOk(fCfgItem, data)
-				}
-
-				if retMsgData != nil {
-					return retMsgData
-				}
-			}
 			continue
 		}
 
 		if fCfgItem.FieldType == "LIST" || (fCfgItem.FieldType == "OBJ" && fCfgItem.KeyType == "VOBJ") {
 			l, _ := data.([]interface{})
 			for _, v := range l {
-				retMsgData := p.cycleCheckParams(value.(map[string]interface{}), v)
+				retMsgData = p.cycleCheckParams(value.(map[string]interface{}), v)
 				if retMsgData != nil {
 					return retMsgData
 				}
 			}
 		} else {
-			m, _ := data.(map[string]interface{})
-			retMsgData := p.cycleCheckParams(value.(map[string]interface{}), m[key])
+			if isRoot {
+				retMsgData = p.cycleCheckParams(value.(map[string]interface{}), data)
+			} else {
+				m, _ := data.(map[string]interface{})
+				retMsgData = p.cycleCheckParams(value.(map[string]interface{}), m[key])
+			}
 			if retMsgData != nil {
 				return retMsgData
 			}
@@ -370,6 +349,14 @@ func (p *http)cycleCheckParams(msgFieldMap map[string]interface{}, data interfac
 	return nil
 }
 func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
+	if fCfgItem.IfMust == ""{
+		return nil
+	}
+
+	if fCfgItem.IfMust == "NO" && (paramValue == nil || paramValue == "") {
+		return nil
+	}
+
 	if paramValue == nil || paramValue == "" {
 		return []string{"NULL_STR_FIELD", fCfgItem.FieldUrl}
 	}
@@ -412,6 +399,9 @@ func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 			}
 
 			if !isPass {
+				if len(fmt.Sprint(rule["ruleDesc"])) > 0 {
+					return fmt.Sprint(rule["ruleDesc"])
+				}
 				resByte, _ := json.Marshal(exprVal)
 				return []string{"WRONG_STR_RANGE", fCfgItem.FieldUrl, string(resByte)}
 			}
@@ -419,25 +409,50 @@ func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 
 		if rule["checkType"] == "ENU" {
 			isPass = false
-			if rule["isCaseSensitive"] == 1 {
-				for _, value := range exprVal {
-					v, _ := value.(string)
-					if s == v {
-						isPass = true
-						break
+			if rule["isCaseSensitive"].(float64) == 1 {
+				if rule["isMatched"].(float64) == 1 {
+					for _, value := range exprVal {
+						v, _ := value.(string)
+						if s == v {
+							isPass = true
+							break
+						}
+					}
+				} else {
+					isPass = true
+					for _, value := range exprVal {
+						v, _ := value.(string)
+						if s == v {
+							isPass = false
+							break
+						}
 					}
 				}
 			} else {
-				for _, value := range exprVal {
-					v, _ := value.(string)
-					if strings.ToUpper(s) == strings.ToUpper(v) {
-						isPass = true
-						break
+				if rule["isMatched"].(float64) == 1 {
+					for _, value := range exprVal {
+						v, _ := value.(string)
+						if strings.ToUpper(s) == strings.ToUpper(v) {
+							isPass = true
+							break
+						}
+					}
+				} else {
+					isPass = true
+					for _, value := range exprVal {
+						v, _ := value.(string)
+						if strings.ToUpper(s) == strings.ToUpper(v) {
+							isPass = false
+							break
+						}
 					}
 				}
 			}
 
 			if !isPass {
+				if len(fmt.Sprint(rule["ruleDesc"])) > 0 {
+					return fmt.Sprint(rule["ruleDesc"])
+				}
 				resByte, _ := json.Marshal(exprVal)
 				return []string{"WRONG_ENU_VALUE", fCfgItem.FieldUrl, string(resByte)}
 			}
@@ -473,6 +488,9 @@ func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 				}
 			}
 			if !isPass {
+				if len(fmt.Sprint(rule["ruleDesc"])) > 0 {
+					return fmt.Sprint(rule["ruleDesc"])
+				}
 				return []string{"WRONG_REGEX_VALUE", fCfgItem.FieldUrl, str}
 			}
 		}
@@ -481,6 +499,14 @@ func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 	return nil
 }
 func (p *http)isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
+	if fCfgItem.IfMust == ""{
+		return nil
+	}
+
+	if fCfgItem.IfMust == "NO" && (paramValue == nil || paramValue == "") {
+		return nil
+	}
+
 	if paramValue == nil {
 		return []string{"NULL_INT_FIELD", fCfgItem.FieldUrl}
 	}
@@ -523,6 +549,9 @@ func (p *http)isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 			}
 
 			if !isPass {
+				if len(fmt.Sprint(rule["ruleDesc"])) > 0 {
+					return fmt.Sprint(rule["ruleDesc"])
+				}
 				resByte, _ := json.Marshal(exprVal)
 				return []string{"WRONG_INT_RANGE", fCfgItem.FieldUrl, string(resByte)}
 			}
@@ -530,15 +559,29 @@ func (p *http)isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 
 		if rule["checkType"] == "ENU" {
 			isPass = false
-			for _, value := range exprVal {
-				v, _ := value.(float64)
-				if i == v {
-					isPass = true
-					break
+			if rule["isMatched"].(float64) == 1 {
+				for _, value := range exprVal {
+					v, _ := value.(float64)
+					if i == v {
+						isPass = true
+						break
+					}
+				}
+			} else {
+				isPass = true
+				for _, value := range exprVal {
+					v, _ := value.(float64)
+					if i == v {
+						isPass = false
+						break
+					}
 				}
 			}
 
 			if !isPass {
+				if len(fmt.Sprint(rule["ruleDesc"])) > 0 {
+					return fmt.Sprint(rule["ruleDesc"])
+				}
 				resByte, _ := json.Marshal(exprVal)
 				return []string{"WRONG_INT_RANGE", fCfgItem.FieldUrl, string(resByte)}
 			}
@@ -574,6 +617,9 @@ func (p *http)isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 				}
 			}
 			if !isPass {
+				if len(fmt.Sprint(rule["ruleDesc"])) > 0 {
+					return fmt.Sprint(rule["ruleDesc"])
+				}
 				return []string{"WRONG_REGEX_VALUE", fCfgItem.FieldUrl, str}
 			}
 		}
@@ -582,6 +628,14 @@ func (p *http)isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 	return nil
 }
 func (p *http)isObjOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
+	if fCfgItem.IfMust == ""{
+		return nil
+	}
+
+	if fCfgItem.IfMust == "NO" && (paramValue == nil || paramValue == "") {
+		return nil
+	}
+
 	if paramValue == nil {
 		return []string{"NULL_FIELD", fCfgItem.FieldUrl}
 	}
@@ -603,6 +657,14 @@ func (p *http)isObjOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 	return nil
 }
 func (p *http)isListOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
+	if fCfgItem.IfMust == ""{
+		return nil
+	}
+
+	if fCfgItem.IfMust == "NO" && (paramValue == nil || paramValue == "") {
+		return nil
+	}
+
 	if paramValue == nil {
 		return []string{"NULL_FIELD", fCfgItem.FieldUrl}
 	}
