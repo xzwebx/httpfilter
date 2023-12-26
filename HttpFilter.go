@@ -51,6 +51,7 @@ type filedCfg struct {
 	FieldDesc string `json:"fieldDesc"`
 	IfMust string `json:"ifMust"`
 	KeyType string `json:"keyType"`
+	NullTips string `json:"nullTips"`
 }
 
 type RstType struct {
@@ -163,9 +164,9 @@ var R = &Response{}
 
 var H = &http{}
 func WebCommResponse(c *gin.Context) {
-	rstType := RstType{CodeKey: "SYSTEM_TIPS", Msg: "", Data: "[]"}
+	rstType := RstType{CodeKey: "CLT_ERR", Msg: "", Data: "[]"}
 
-	rstType.CodeKey = "SUCCESS"
+	rstType.CodeKey = "SUCC"
 	retData := R.MSG(rstType)
 	c.JSON(200, retData)
 }
@@ -241,7 +242,7 @@ func (p *http)CheckReq(c *gin.Context) {
 	}
 
 	module, ok := p.ModuleMap[baseUrl]
-	rstType := RstType{CodeKey: "SYSTEM_TIPS", Msg: []string{"ERR_URL"}, Data: "[]"}
+	rstType := RstType{CodeKey: "CLT_ERR", Msg: []string{"WEBX_ERR_URL"}, Data: "[]"}
 	if !ok {
 		retData := R.MSG(rstType)
 		c.JSON(200, retData)
@@ -326,11 +327,18 @@ func (p *http)cycleCheckParams(msgFieldMap map[string]interface{}, data interfac
 		}
 
 		if fCfgItem.FieldType == "LIST" || (fCfgItem.FieldType == "OBJ" && fCfgItem.KeyType == "VOBJ") {
-			l, _ := data.([]interface{})
-			for _, v := range l {
-				retMsgData = p.cycleCheckParams(value.(map[string]interface{}), v)
+			if isRoot {
+				retMsgData = p.cycleCheckParams(value.(map[string]interface{}), data)
 				if retMsgData != nil {
 					return retMsgData
+				}
+			} else {
+				l, _ := data.([]interface{})
+				for _, v := range l {
+					retMsgData = p.cycleCheckParams(value.(map[string]interface{}), v)
+					if retMsgData != nil {
+						return retMsgData
+					}
 				}
 			}
 		} else {
@@ -348,6 +356,18 @@ func (p *http)cycleCheckParams(msgFieldMap map[string]interface{}, data interfac
 
 	return nil
 }
+
+func getCustomTips(tips string) string {
+	if len(tips) > 3 && tips[0:2] == "${" && fmt.Sprintf("%c", tips[len(tips)-1]) == "}" {
+		tipsKey := tips[2:len(tips)-1]
+		tipsKey = strings.TrimSpace(tipsKey)
+		if v, ok := R.TipsMap[tipsKey]; ok {
+			return v.Tips
+		}
+	}
+	return tips
+}
+
 func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 	if fCfgItem.IfMust == ""{
 		return nil
@@ -357,13 +377,13 @@ func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 		return nil
 	}
 
-	if paramValue == nil || paramValue == "" {
-		return []string{"NULL_STR_FIELD", fCfgItem.FieldUrl}
-	}
-
 	s, ok := paramValue.(string)
-	if !ok {
-		return []string{"NOT_STR_VALUE", fCfgItem.FieldUrl}
+	if !ok || paramValue == "" {
+		tips := fmt.Sprint(fCfgItem.NullTips)
+		if len(tips) > 0 {
+			return getCustomTips(tips)
+		}
+		return []string{"WEBX_NULL_FIELD", "string", fCfgItem.FieldUrl}
 	}
 
 	isPass := true
@@ -399,11 +419,12 @@ func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 			}
 
 			if !isPass {
-				if len(fmt.Sprint(rule["ruleDesc"])) > 0 {
-					return fmt.Sprint(rule["ruleDesc"])
+				tips := fmt.Sprint(rule["ruleDesc"])
+				if len(tips) > 0 {
+					return getCustomTips(tips)
 				}
 				resByte, _ := json.Marshal(exprVal)
-				return []string{"WRONG_STR_RANGE", fCfgItem.FieldUrl, string(resByte)}
+				return []string{"WEBX_WRONG_RANGE", fCfgItem.FieldUrl, string(resByte)}
 			}
 		}
 
@@ -450,11 +471,16 @@ func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 			}
 
 			if !isPass {
-				if len(fmt.Sprint(rule["ruleDesc"])) > 0 {
-					return fmt.Sprint(rule["ruleDesc"])
+				tips := fmt.Sprint(rule["ruleDesc"])
+				if len(tips) > 0 {
+					return getCustomTips(tips)
 				}
 				resByte, _ := json.Marshal(exprVal)
-				return []string{"WRONG_ENU_VALUE", fCfgItem.FieldUrl, string(resByte)}
+				if rule["isMatched"].(float64) == 1 {
+					return []string{"WEBX_WRONG_ENU_VALUE", fCfgItem.FieldUrl, string(resByte)}
+				} else {
+					return []string{"WEBX_EXCLUSION_ENU_VALUE", fCfgItem.FieldUrl, string(resByte)}
+				}
 			}
 		}
 
@@ -465,13 +491,13 @@ func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 			for _, value := range exprVal {
 				v, ok := value.(string)
 				if !ok {
-					return []string{"SYSTEM_ERR"}
+					return []string{"SVC_ERR"}
 				}
 
 				str := strings.Trim(v, "/")
 				reg, err := regexp.Compile(str)
 				if err != nil {
-					return []string{"SYSTEM_ERR"}
+					return []string{"SVC_ERR"}
 				}
 
 				found := reg.MatchString(s)
@@ -488,10 +514,11 @@ func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 				}
 			}
 			if !isPass {
-				if len(fmt.Sprint(rule["ruleDesc"])) > 0 {
-					return fmt.Sprint(rule["ruleDesc"])
+				tips := fmt.Sprint(rule["ruleDesc"])
+				if len(tips) > 0 {
+					return getCustomTips(tips)
 				}
-				return []string{"WRONG_REGEX_VALUE", fCfgItem.FieldUrl, str}
+				return []string{"WEBX_WRONG_REGEX_VALUE", fCfgItem.FieldUrl, str}
 			}
 		}
 	}
@@ -507,13 +534,13 @@ func (p *http)isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 		return nil
 	}
 
-	if paramValue == nil {
-		return []string{"NULL_INT_FIELD", fCfgItem.FieldUrl}
-	}
-
 	i, ok := paramValue.(float64)
-	if !ok {
-		return []string{"NOT_INT_VALUE", fCfgItem.FieldUrl}
+	if !ok || paramValue == nil {
+		tips := fmt.Sprint(fCfgItem.NullTips)
+		if len(tips) > 0 {
+			return getCustomTips(tips)
+		}
+		return []string{"WEBX_NULL_FIELD", "number", fCfgItem.FieldUrl}
 	}
 
 	isPass := true
@@ -549,11 +576,12 @@ func (p *http)isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 			}
 
 			if !isPass {
-				if len(fmt.Sprint(rule["ruleDesc"])) > 0 {
-					return fmt.Sprint(rule["ruleDesc"])
+				tips := fmt.Sprint(rule["ruleDesc"])
+				if len(tips) > 0 {
+					return getCustomTips(tips)
 				}
 				resByte, _ := json.Marshal(exprVal)
-				return []string{"WRONG_INT_RANGE", fCfgItem.FieldUrl, string(resByte)}
+				return []string{"WEBX_WRONG_RANGE", fCfgItem.FieldUrl, string(resByte)}
 			}
 		}
 
@@ -579,11 +607,16 @@ func (p *http)isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 			}
 
 			if !isPass {
-				if len(fmt.Sprint(rule["ruleDesc"])) > 0 {
-					return fmt.Sprint(rule["ruleDesc"])
+				tips := fmt.Sprint(rule["ruleDesc"])
+				if len(tips) > 0 {
+					return getCustomTips(tips)
 				}
 				resByte, _ := json.Marshal(exprVal)
-				return []string{"WRONG_INT_RANGE", fCfgItem.FieldUrl, string(resByte)}
+				if rule["isMatched"].(float64) == 1 {
+					return []string{"WEBX_WRONG_ENU_VALUE", fCfgItem.FieldUrl, string(resByte)}
+				} else {
+					return []string{"WEBX_EXCLUSION_ENU_VALUE", fCfgItem.FieldUrl, string(resByte)}
+				}
 			}
 		}
 
@@ -594,12 +627,12 @@ func (p *http)isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 			for _, value := range exprVal {
 				v, ok := value.(string)
 				if !ok {
-					return []string{"SYSTEM_ERR"}
+					return []string{"SVC_ERR"}
 				}
 
 				reg, err := regexp.Compile(v)
 				if err != nil {
-					return []string{"SYSTEM_ERR"}
+					return []string{"SVC_ERR"}
 				}
 
 				s := fmt.Sprintf("%f", i)
@@ -617,10 +650,11 @@ func (p *http)isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 				}
 			}
 			if !isPass {
-				if len(fmt.Sprint(rule["ruleDesc"])) > 0 {
-					return fmt.Sprint(rule["ruleDesc"])
+				tips := fmt.Sprint(rule["ruleDesc"])
+				if len(tips) > 0 {
+					return getCustomTips(tips)
 				}
-				return []string{"WRONG_REGEX_VALUE", fCfgItem.FieldUrl, str}
+				return []string{"WEBX_WRONG_REGEX_VALUE", fCfgItem.FieldUrl, str}
 			}
 		}
 	}
@@ -636,22 +670,57 @@ func (p *http)isObjOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 		return nil
 	}
 
-	if paramValue == nil {
-		return []string{"NULL_FIELD", fCfgItem.FieldUrl}
-	}
-
-	resByte, err := json.Marshal(paramValue)
-	if err != nil {
-		return []string{"WRONG_OBJ_VALUE", fCfgItem.FieldUrl}
-	}
+	resByte, err1 := json.Marshal(paramValue)
 	var m map[string]interface{}
-	err = json.Unmarshal(resByte, &m)
-	if err != nil {
-		return []string{"WRONG_OBJ_VALUE", fCfgItem.FieldUrl}
+	err2 := json.Unmarshal(resByte, &m)
+	if paramValue == nil || err1 != nil || err2 != nil || len(m) == 0 {
+		tips := fmt.Sprint(fCfgItem.NullTips)
+		if len(tips) > 0 {
+			return getCustomTips(tips)
+		}
+		return []string{"WEBX_NULL_FIELD", "map", fCfgItem.FieldUrl}
 	}
 
-	if len(m) == 0 {
-		return []string{"NULL_VALUE", fCfgItem.FieldUrl}
+	isPass := true
+	rules, ok := fCfgItem.Rules.([]interface{})
+	if !ok {
+		return nil
+	}
+	for _, item := range rules {
+		rule, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		exprVal, ok := rule["exprVal"].([]interface{})
+		if !ok {
+			continue
+		}
+		if rule["checkType"] == "RANGE" {
+			_, ok = exprVal[0].([]interface{})
+			if ok {
+				for _, value := range exprVal {
+					v, _ := value.([]interface{})
+					if len(m) < int(math.Floor(v[0].(float64))) && len(m) > int(math.Floor(v[1].(float64))) {
+						isPass = false
+						break
+					}
+				}
+			} else {
+				if len(m) < int(math.Floor(exprVal[0].(float64))) || len(m) > int(math.Floor(exprVal[1].(float64))) {
+					isPass = false
+				}
+			}
+
+			if !isPass {
+				tips := fmt.Sprint(rule["ruleDesc"])
+				if len(tips) > 0 {
+					return getCustomTips(tips)
+				}
+				resByte, _ := json.Marshal(exprVal)
+				return []string{"WEBX_WRONG_RANGE", fCfgItem.FieldUrl, string(resByte)}
+			}
+		}
 	}
 
 	return nil
@@ -665,22 +734,57 @@ func (p *http)isListOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 		return nil
 	}
 
-	if paramValue == nil {
-		return []string{"NULL_FIELD", fCfgItem.FieldUrl}
-	}
-
-	resByte, err := json.Marshal(paramValue)
-	if err != nil {
-		return []string{"WRONG_LIST_VALUE", fCfgItem.FieldUrl}
-	}
+	resByte, err1 := json.Marshal(paramValue)
 	var l []interface{}
-	err = json.Unmarshal(resByte, &l)
-	if err != nil {
-		return []string{"WRONG_LIST_VALUE", fCfgItem.FieldUrl}
+	err2 := json.Unmarshal(resByte, &l)
+	if paramValue == nil || err1 != nil || err2 != nil || len(l) == 0 {
+		tips := fmt.Sprint(fCfgItem.NullTips)
+		if len(tips) > 0 {
+			return getCustomTips(tips)
+		}
+		return []string{"WEBX_NULL_FIELD", "list", fCfgItem.FieldUrl}
 	}
 
-	if len(l) == 0 {
-		return []string{"NULL_VALUE", fCfgItem.FieldUrl}
+	isPass := true
+	rules, ok := fCfgItem.Rules.([]interface{})
+	if !ok {
+		return nil
+	}
+	for _, item := range rules {
+		rule, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		exprVal, ok := rule["exprVal"].([]interface{})
+		if !ok {
+			continue
+		}
+		if rule["checkType"] == "RANGE" {
+			_, ok = exprVal[0].([]interface{})
+			if ok {
+				for _, value := range exprVal {
+					v, _ := value.([]interface{})
+					if len(l) < int(math.Floor(v[0].(float64))) && len(l) > int(math.Floor(v[1].(float64))) {
+						isPass = false
+						break
+					}
+				}
+			} else {
+				if len(l) < int(math.Floor(exprVal[0].(float64))) || len(l) > int(math.Floor(exprVal[1].(float64))) {
+					isPass = false
+				}
+			}
+
+			if !isPass {
+				tips := fmt.Sprint(rule["ruleDesc"])
+				if len(tips) > 0 {
+					return getCustomTips(tips)
+				}
+				resByte, _ := json.Marshal(exprVal)
+				return []string{"WEBX_WRONG_RANGE", fCfgItem.FieldUrl, string(resByte)}
+			}
+		}
 	}
 
 	return nil
