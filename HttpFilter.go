@@ -386,7 +386,6 @@ func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 		return []string{"WEBX_NULL_FIELD", "string", fCfgItem.FieldUrl}
 	}
 
-	isPass := true
 	rules, ok := fCfgItem.Rules.([]interface{})
 	if !ok {
 		return nil
@@ -403,18 +402,19 @@ func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 			continue
 		}
 		if rule["checkType"] == "RANGE" {
+			isPass := false
 			_, ok = exprVal[0].([]interface{})
 			if ok {
 				for _, value := range exprVal {
 					v, _ := value.([]interface{})
-					if len(s) < int(math.Floor(v[0].(float64))) && len(s) > int(math.Floor(v[1].(float64))) {
-						isPass = false
+					if len(s) >= int(math.Floor(v[0].(float64))) && len(s) <= int(math.Floor(v[1].(float64))) {
+						isPass = true
 						break
 					}
 				}
 			} else {
-				if len(s) < int(math.Floor(exprVal[0].(float64))) || len(s) > int(math.Floor(exprVal[1].(float64))) {
-					isPass = false
+				if len(s) >= int(math.Floor(exprVal[0].(float64))) || len(s) <= int(math.Floor(exprVal[1].(float64))) {
+					isPass = true
 				}
 			}
 
@@ -429,7 +429,7 @@ func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 		}
 
 		if rule["checkType"] == "ENU" {
-			isPass = false
+			isPass := false
 			if rule["isCaseSensitive"].(float64) == 1 {
 				if rule["isMatched"].(float64) == 1 {
 					for _, value := range exprVal {
@@ -485,7 +485,7 @@ func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 		}
 
 		if rule["checkType"] == "REGEX" {
-			isPass = false
+			isPass := false
 			resByte, _ := json.Marshal(exprVal)
 			str := string(resByte)
 			for _, value := range exprVal {
@@ -543,7 +543,6 @@ func (p *http)isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 		return []string{"WEBX_NULL_FIELD", "number", fCfgItem.FieldUrl}
 	}
 
-	isPass := true
 	rules, ok := fCfgItem.Rules.([]interface{})
 	if !ok {
 		return nil
@@ -560,18 +559,19 @@ func (p *http)isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 		}
 
 		if rule["checkType"] == "RANGE" {
+			isPass := false
 			_, ok := exprVal[0].([]interface{})
 			if ok {
 				for _, value := range exprVal {
 					v, _ := value.([]interface{})
-					if i < v[0].(float64) && i > v[1].(float64) {
-						isPass = false
+					if i >= v[0].(float64) && i <= v[1].(float64) {
+						isPass = true
 						break
 					}
 				}
 			} else {
-				if i < exprVal[0].(float64) || i > exprVal[1].(float64) {
-					isPass = false
+				if i >= exprVal[0].(float64) && i <= exprVal[1].(float64) {
+					isPass = true
 				}
 			}
 
@@ -586,7 +586,7 @@ func (p *http)isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 		}
 
 		if rule["checkType"] == "ENU" {
-			isPass = false
+			isPass := false
 			if rule["isMatched"].(float64) == 1 {
 				for _, value := range exprVal {
 					v, _ := value.(float64)
@@ -621,7 +621,7 @@ func (p *http)isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 		}
 
 		if rule["checkType"] == "REGEX" {
-			isPass = false
+			isPass := false
 			resByte, _ := json.Marshal(exprVal)
 			str := string(resByte)
 			for _, value := range exprVal {
@@ -681,7 +681,6 @@ func (p *http)isObjOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 		return []string{"WEBX_NULL_FIELD", "map", fCfgItem.FieldUrl}
 	}
 
-	isPass := true
 	rules, ok := fCfgItem.Rules.([]interface{})
 	if !ok {
 		return nil
@@ -697,18 +696,19 @@ func (p *http)isObjOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 			continue
 		}
 		if rule["checkType"] == "RANGE" {
+			isPass := false
 			_, ok = exprVal[0].([]interface{})
 			if ok {
 				for _, value := range exprVal {
 					v, _ := value.([]interface{})
-					if len(m) < int(math.Floor(v[0].(float64))) && len(m) > int(math.Floor(v[1].(float64))) {
-						isPass = false
+					if len(m) >= int(math.Floor(v[0].(float64))) && len(m) <= int(math.Floor(v[1].(float64))) {
+						isPass = true
 						break
 					}
 				}
 			} else {
-				if len(m) < int(math.Floor(exprVal[0].(float64))) || len(m) > int(math.Floor(exprVal[1].(float64))) {
-					isPass = false
+				if len(m) >= int(math.Floor(exprVal[0].(float64))) && len(m) <= int(math.Floor(exprVal[1].(float64))) {
+					isPass = true
 				}
 			}
 
@@ -745,7 +745,6 @@ func (p *http)isListOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 		return []string{"WEBX_NULL_FIELD", "list", fCfgItem.FieldUrl}
 	}
 
-	isPass := true
 	rules, ok := fCfgItem.Rules.([]interface{})
 	if !ok {
 		return nil
@@ -761,18 +760,19 @@ func (p *http)isListOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 			continue
 		}
 		if rule["checkType"] == "RANGE" {
+			isPass := false
 			_, ok = exprVal[0].([]interface{})
 			if ok {
 				for _, value := range exprVal {
 					v, _ := value.([]interface{})
-					if len(l) < int(math.Floor(v[0].(float64))) && len(l) > int(math.Floor(v[1].(float64))) {
-						isPass = false
+					if len(l) >= int(math.Floor(v[0].(float64))) && len(l) <= int(math.Floor(v[1].(float64))) {
+						isPass = true
 						break
 					}
 				}
 			} else {
-				if len(l) < int(math.Floor(exprVal[0].(float64))) || len(l) > int(math.Floor(exprVal[1].(float64))) {
-					isPass = false
+				if len(l) >= int(math.Floor(exprVal[0].(float64))) || len(l) <= int(math.Floor(exprVal[1].(float64))) {
+					isPass = true
 				}
 			}
 
