@@ -28,6 +28,7 @@ type Api struct {
 	ReqMsgId uint32 `json:"reqMsgId"`
 	RspMsgId uint32 `json:"rspMsgId"`
 	SubUri string `json:"subUri"`
+	Meta string `json:"meta"`
 }
 type http struct {
 	ModuleMap map[string]Module
@@ -190,6 +191,17 @@ func (res *Response)GetRspMsgId(c *gin.Context) uint32 {
 	}
 	return 0
 }
+
+func (res *Response)GetInterfaceInfo(c *gin.Context) *Api {
+	val, exist := c.Get("interfaceInfo")
+	if exist {
+		i, ok := val.(Api)
+		if ok {
+			return &i
+		}
+	}
+	return nil
+}
 var R = &Response{isCheckedRes: true}
 
 var H = &http{}
@@ -294,6 +306,8 @@ func (p *http)CheckReq(c *gin.Context) {
 	if (rspMsgId > 0) {
 		c.Set("__rspMsgId", rspMsgId)
 	}
+
+	c.Set("interfaceInfo", p.ApiMap[strconv.Itoa(int(module.Id))][subUri][strings.ToLower(c.Request.Method)])
 
 	reqMsgId := p.ApiMap[strconv.Itoa(int(module.Id))][subUri][strings.ToLower(c.Request.Method)].ReqMsgId
 	if reqMsgId <= 0 {
