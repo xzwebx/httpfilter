@@ -9,14 +9,13 @@ import (
 	"math"
 	"reflect"
 	"regexp"
-	"strconv"
 	"strings"
 )
 
 type Module struct {
 	AppUri string `json:"appUri"`
 	FilePath string `json:"filePath"`
-	Id uint32 `json:"id"`
+	Id string `json:"id"`
 	RouteDesc string `json:"routeDesc"`
 	Uri string `json:"uri"`
 }
@@ -24,9 +23,9 @@ type Api struct {
 	FunDesc string `json:"funDesc"`
 	Method string `json:"method"`
 	ModuleFun string `json:"moduleFun"`
-	ModuleId uint32 `json:"moduleId"`
-	ReqMsgId uint32 `json:"reqMsgId"`
-	RspMsgId uint32 `json:"rspMsgId"`
+	ModuleId string `json:"moduleId"`
+	ReqMsgId string `json:"reqMsgId"`
+	RspMsgId string `json:"rspMsgId"`
 	SubUri string `json:"subUri"`
 	Meta string `json:"meta"`
 }
@@ -34,6 +33,10 @@ type http struct {
 	ModuleMap map[string]Module
 	ApiMap map[string]map[string]map[string]Api
 	FieldMap map[string]interface{}
+	ResCodeMap map[string]ResCode
+	TipsMap map[string]Tips
+	Response *Response
+	isCheckedRes bool
 }
 type Rule struct {
 	FieldId string `json:"fieldId"`
@@ -41,7 +44,7 @@ type Rule struct {
 	ExprVal []interface{}
 }
 type filedCfg struct {
-	Id uint32 `json:"id"`
+	Id string `json:"id"`
 	FieldUrl string `json:"fieldUrl"`
 	FieldType string `json:"fieldType"`
 	ExpVal string `json:"expVal"`
@@ -59,7 +62,6 @@ type RstType struct {
 	CodeKey string
 	Msg interface{}
 	Data interface{}
-	RspMsgId uint32
 }
 type ResCode struct {
 	RstKey string `json:"rstKey"`
@@ -74,80 +76,122 @@ type Response struct {
 	ResCodeMap map[string]ResCode
 	TipsMap map[string]Tips
 	isCheckedRes bool
+	c *gin.Context
 }
 
-func (res *Response)SetResCodeMap(m map[string]interface{}) bool {
+func (res *Response)SetIsCheckedRes(isCheckedRes bool) {
+	res.isCheckedRes = isCheckedRes
+}
+
+func (p *http)SetModuleMap(m map[string]interface{}) bool {
 	dataType , _ := json.Marshal(m)
 	dataString := string(dataType)
-	err := json.Unmarshal([]byte(dataString), &res.ResCodeMap)
+	err := json.Unmarshal([]byte(dataString), &p.ModuleMap)
 	if err != nil {
 		return false
 	}
 	return true
 }
-func (res *Response)SetTipsMap(m map[string]interface{}) bool {
+func (p *http)SetApiMap(m map[string]interface{}) bool {
 	dataType , _ := json.Marshal(m)
 	dataString := string(dataType)
-	err := json.Unmarshal([]byte(dataString), &res.TipsMap)
+	err := json.Unmarshal([]byte(dataString), &p.ApiMap)
 	if err != nil {
 		return false
 	}
 	return true
 }
-func (res *Response)SetIsCheckedRes(isCheckedRes uint32) {
+func (p *http)SetFieldMap(m map[string]interface{}) bool {
+	dataType , _ := json.Marshal(m)
+	dataString := string(dataType)
+	err := json.Unmarshal([]byte(dataString), &p.FieldMap)
+	if err != nil {
+		return false
+	}
+	return true
+}
+func (p *http)SetResCodeMap(m map[string]interface{}) bool {
+	dataType , _ := json.Marshal(m)
+	dataString := string(dataType)
+	err := json.Unmarshal([]byte(dataString), &p.ResCodeMap)
+	if err != nil {
+		return false
+	}
+	return true
+}
+func (p *http)SetTipsMap(m map[string]interface{}) bool {
+	dataType , _ := json.Marshal(m)
+	dataString := string(dataType)
+	err := json.Unmarshal([]byte(dataString), &p.TipsMap)
+	if err != nil {
+		return false
+	}
+	return true
+}
+func (p *http)SetIsCheckedRes(isCheckedRes uint32) {
 	if (isCheckedRes == 1) {
-		res.isCheckedRes = true
+		p.isCheckedRes = true
 	} else {
-		res.isCheckedRes = false
+		p.isCheckedRes = false
 	}
 }
 
-func (res *Response)MSG(params RstType) gin.H{
-	if res.isCheckedRes && params.RspMsgId > 0 {
-		retMsgData := H.cycleCheckParams(H.FieldMap[strconv.Itoa(int(params.RspMsgId))].(map[string]interface{}), params.Data)
-		if retMsgData != nil {
-			rstType := RstType{CodeKey: "SVC_ERR", Msg: retMsgData, Data: params.Data}
-			return res.MSG(rstType)
-		} else {
-			params.RspMsgId = 0
-			return res.MSG(params)
-		}
-	} else {
-		code := ""
-		msg := ""
-		if v, ok := res.ResCodeMap[params.CodeKey]; ok {
-			code = v.RstCode
-			msg = v.CodeDesc
-		}
-
-		if params.Msg == nil || params.Msg == "" {
-			if v, ok := res.TipsMap[params.CodeKey]; ok {
-				msg = v.Tips
+func (res *Response)MSG(params RstType) {
+	if res.isCheckedRes {
+		val, exist := res.c.Get("interfaceInfo")
+		if exist {
+			api, ok := val.(Api)
+			if ok && len(api.RspMsgId) > 0 && api.RspMsgId != "0" && params.CodeKey == "SUCC" {
+				var obj interface{}
+				switch ret := params.Data.(type) {
+				case string:
+					json.Unmarshal([]byte(ret), &obj)
+				default:
+					obj = params.Data
+				}
+				retMsgData := H.cycleCheckParams(H.FieldMap[api.RspMsgId].(map[string]interface{}), obj)
+				if retMsgData != nil {
+					params.CodeKey = "SVC_ERR"
+					params.Msg = retMsgData
+				}
 			}
-		} else {
-			switch ret := params.Msg.(type) {
-			case string:
-				msg = ret
-			case []string:
-				msg = res.ForMatMsg(ret)
-			default:
-			}
-		}
-
-		var data interface{}
-		switch ret := params.Data.(type) {
-		case string:
-			json.Unmarshal([]byte(ret), &data)
-		default:
-			data = params.Data
-		}
-
-		return gin.H{
-			"code": code,
-			"msg": msg,
-			"data": data,
 		}
 	}
+
+	code := ""
+	msg := ""
+	if v, ok := res.ResCodeMap[params.CodeKey]; ok {
+		code = v.RstCode
+		msg = v.CodeDesc
+	}
+
+	if params.Msg == nil || params.Msg == "" {
+		if v, ok := res.TipsMap[params.CodeKey]; ok {
+			msg = v.Tips
+		}
+	} else {
+		switch ret := params.Msg.(type) {
+		case string:
+			msg = ret
+		case []string:
+			msg = res.ForMatMsg(ret)
+		default:
+		}
+	}
+
+	var data interface{}
+	switch ret := params.Data.(type) {
+	case string:
+		json.Unmarshal([]byte(ret), &data)
+	default:
+		data = params.Data
+	}
+
+	res.c.JSON(200, gin.H{
+		"code": code,
+		"msg": msg,
+		"data": data,
+	})
 }
 func (res *Response)ForMatMsg(msgList []string) string {
 	msg := ""
@@ -181,17 +225,6 @@ func (res *Response)ForMatMsg(msgList []string) string {
 
 	return msg
 }
-func (res *Response)GetRspMsgId(c *gin.Context) uint32 {
-	val, exist := c.Get("__rspMsgId")
-	if exist {
-		i, ok := val.(uint32)
-		if ok {
-			return i
-		}
-	}
-	return 0
-}
-
 func (res *Response)GetInterfaceInfo(c *gin.Context) *Api {
 	val, exist := c.Get("interfaceInfo")
 	if exist {
@@ -202,20 +235,18 @@ func (res *Response)GetInterfaceInfo(c *gin.Context) *Api {
 	}
 	return nil
 }
-var R = &Response{isCheckedRes: true}
+var R = &Response{isCheckedRes: false}
 
 var H = &http{}
 func WebCommResponse(c *gin.Context) {
-	rstType := RstType{CodeKey: "CLT_ERR", Msg: "", Data: "[]", RspMsgId: R.GetRspMsgId(c)}
-	rstType.CodeKey = "SUCC"
-	retData := R.MSG(rstType)
-	c.JSON(200, retData)
+	retData := RstType{CodeKey: "SUCC", Msg: "", Data: "[]"}
+	H.Response.MSG(retData)
 }
 func (p *http)SetRoutes(pGin *gin.Engine, moduleObjMap map[string]interface{}) {
 	for moduleId, subUriMap := range p.ApiMap {
 		var module = Module{}
 		for _, module = range p.ModuleMap {
-			if strconv.Itoa(int(module.Id)) == moduleId {
+			if module.Id == moduleId {
 				break
 			}
 		}
@@ -241,38 +272,14 @@ func (p *http)SetRoutes(pGin *gin.Engine, moduleObjMap map[string]interface{}) {
 		}
 	}
 }
-func (p *http)SetModuleMap(m map[string]interface{}) bool {
-	dataType , _ := json.Marshal(m)
-	dataString := string(dataType)
-	err := json.Unmarshal([]byte(dataString), &p.ModuleMap)
-	if err != nil {
-		return false
-	}
-	return true
-}
-func (p *http)SetApiMap(m map[string]interface{}) bool {
-	dataType , _ := json.Marshal(m)
-	dataString := string(dataType)
-	err := json.Unmarshal([]byte(dataString), &p.ApiMap)
-	if err != nil {
-		return false
-	}
-	return true
-}
-func (p *http)SetFieldMap(m map[string]interface{}) bool {
-	dataType , _ := json.Marshal(m)
-	dataString := string(dataType)
-	err := json.Unmarshal([]byte(dataString), &p.FieldMap)
-	if err != nil {
-		return false
-	}
-	return true
-}
 func (p *http)CheckReq(c *gin.Context) {
 	if c.Request.Method == "OPTIONS" {
 		c.Abort()
 		return
 	}
+
+	p.Response = &Response{ResCodeMap: p.ResCodeMap, TipsMap: p.TipsMap, isCheckedRes: false, c: c}
+
 	baseUrlList := strings.Split(c.Request.URL.Path, "/")
 	subUri := baseUrlList[len(baseUrlList) - 1]
 	baseUrl:= ""
@@ -285,32 +292,25 @@ func (p *http)CheckReq(c *gin.Context) {
 	module, ok := p.ModuleMap[baseUrl]
 	rstType := RstType{CodeKey: "CLT_ERR", Msg: []string{"WEBX_ERR_URL"}, Data: "[]"}
 	if !ok {
-		retData := R.MSG(rstType)
-		c.JSON(200, retData)
+		H.Response.MSG(rstType)
 		c.Abort()
 		return
 	}
 
-	if p.ApiMap[strconv.Itoa(int(module.Id))] == nil ||
-		p.ApiMap[strconv.Itoa(int(module.Id))][subUri] == nil {
-		_, ok := p.ApiMap[strconv.Itoa(int(module.Id))][subUri][strings.ToLower(c.Request.Method)]
+	if p.ApiMap[module.Id] == nil ||
+		p.ApiMap[module.Id][subUri] == nil {
+		_, ok := p.ApiMap[module.Id][subUri][strings.ToLower(c.Request.Method)]
 		if !ok {
-			retData := R.MSG(rstType)
-			c.JSON(200, retData)
+			H.Response.MSG(rstType)
 			c.Abort()
 			return
 		}
 	}
 
-	rspMsgId := p.ApiMap[strconv.Itoa(int(module.Id))][subUri][strings.ToLower(c.Request.Method)].RspMsgId
-	if (rspMsgId > 0) {
-		c.Set("__rspMsgId", rspMsgId)
-	}
+	c.Set("interfaceInfo", p.ApiMap[module.Id][subUri][strings.ToLower(c.Request.Method)])
 
-	c.Set("interfaceInfo", p.ApiMap[strconv.Itoa(int(module.Id))][subUri][strings.ToLower(c.Request.Method)])
-
-	reqMsgId := p.ApiMap[strconv.Itoa(int(module.Id))][subUri][strings.ToLower(c.Request.Method)].ReqMsgId
-	if reqMsgId <= 0 {
+	reqMsgId := p.ApiMap[module.Id][subUri][strings.ToLower(c.Request.Method)].ReqMsgId
+	if len(reqMsgId) <= 0 || reqMsgId == "0" {
 		c.Next()
 		return
 	}
@@ -324,15 +324,15 @@ func (p *http)CheckReq(c *gin.Context) {
 	_ = json.Unmarshal(data, &body)
 
 	c.Request.Body = ioutil.NopCloser(bytes.NewBuffer(data))
-	retMsgData := p.cycleCheckParams(p.FieldMap[strconv.Itoa(int(reqMsgId))].(map[string]interface{}), body)
+	retMsgData := p.cycleCheckParams(p.FieldMap[reqMsgId].(map[string]interface{}), body)
 	if retMsgData != nil {
 		rstType.Msg = retMsgData
-		retData := R.MSG(rstType)
-		c.JSON(200, retData)
+		H.Response.MSG(rstType)
 		c.Abort()
 		return
 	}
 
+	p.Response.SetIsCheckedRes(p.isCheckedRes)
 	c.Next()
 }
 func (p *http)cycleCheckParams(msgFieldMap map[string]interface{}, data interface{}) interface{}{
