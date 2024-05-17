@@ -461,7 +461,7 @@ func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 					}
 				}
 			} else {
-				if len(s) >= int(math.Floor(exprVal[0].(float64))) || len(s) <= int(math.Floor(exprVal[1].(float64))) {
+				if len(s) >= int(math.Floor(exprVal[0].(float64))) && len(s) <= int(math.Floor(exprVal[1].(float64))) {
 					isPass = true
 				}
 			}
