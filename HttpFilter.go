@@ -12,6 +12,15 @@ import (
 	"strings"
 )
 
+type http struct {
+	ModuleMap map[string]Module
+	ApiMap map[string]map[string]map[string]Api
+	FieldMap map[string]interface{}
+	ResCodeMap map[string]ResCode
+	TipsMap map[string]Tips
+	isCheckedRes bool
+	c *gin.Context
+}
 type Module struct {
 	AppUri string `json:"appUri"`
 	FilePath string `json:"filePath"`
@@ -29,20 +38,6 @@ type Api struct {
 	SubUri string `json:"subUri"`
 	Meta string `json:"meta"`
 }
-type http struct {
-	ModuleMap map[string]Module
-	ApiMap map[string]map[string]map[string]Api
-	FieldMap map[string]interface{}
-	ResCodeMap map[string]ResCode
-	TipsMap map[string]Tips
-	Response *Response
-	isCheckedRes bool
-}
-type Rule struct {
-	FieldId string `json:"fieldId"`
-	CheckType string `json:"checkType"`
-	ExprVal []interface{}
-}
 type filedCfg struct {
 	Id string `json:"id"`
 	FieldUrl string `json:"fieldUrl"`
@@ -56,6 +51,11 @@ type filedCfg struct {
 	IfMust string `json:"ifMust"`
 	KeyType string `json:"keyType"`
 	NullTips string `json:"nullTips"`
+}
+type Rule struct {
+	FieldId string `json:"fieldId"`
+	CheckType string `json:"checkType"`
+	ExprVal []interface{}
 }
 
 type RstType struct {
@@ -72,177 +72,92 @@ type Tips struct {
 	Key string `json:"key"`
 	Tips string `json:"tips"`
 }
-type Response struct {
-	ResCodeMap map[string]ResCode
-	TipsMap map[string]Tips
-	isCheckedRes bool
-	c *gin.Context
-}
 
-func (res *Response)SetIsCheckedRes(isCheckedRes bool) {
-	res.isCheckedRes = isCheckedRes
-}
-
-func (p *http)SetModuleMap(m map[string]interface{}) bool {
+func SetModuleMap(port uint64, m map[string]interface{}) bool {
+	p, exist := httpMap[port]
+	if !exist {
+		p = &http{}
+	}
 	dataType , _ := json.Marshal(m)
 	dataString := string(dataType)
 	err := json.Unmarshal([]byte(dataString), &p.ModuleMap)
 	if err != nil {
 		return false
 	}
+	httpMap[port] = p
+	p, exist = httpMap[port]
 	return true
 }
-func (p *http)SetApiMap(m map[string]interface{}) bool {
+func SetApiMap(port uint64, m map[string]interface{}) bool {
+	p, exist := httpMap[port]
+	if !exist {
+		p = &http{}
+	}
 	dataType , _ := json.Marshal(m)
 	dataString := string(dataType)
 	err := json.Unmarshal([]byte(dataString), &p.ApiMap)
 	if err != nil {
 		return false
 	}
+	httpMap[port] = p
 	return true
 }
-func (p *http)SetFieldMap(m map[string]interface{}) bool {
+func SetFieldMap(port uint64, m map[string]interface{}) bool {
+	p, exist := httpMap[port]
+	if !exist {
+		p = &http{}
+	}
 	dataType , _ := json.Marshal(m)
 	dataString := string(dataType)
 	err := json.Unmarshal([]byte(dataString), &p.FieldMap)
 	if err != nil {
 		return false
 	}
+	httpMap[port] = p
 	return true
 }
-func (p *http)SetResCodeMap(m map[string]interface{}) bool {
+func SetResCodeMap(port uint64, m map[string]interface{}) bool {
+	p, exist := httpMap[port]
+	if !exist {
+		p = &http{}
+	}
 	dataType , _ := json.Marshal(m)
 	dataString := string(dataType)
 	err := json.Unmarshal([]byte(dataString), &p.ResCodeMap)
 	if err != nil {
 		return false
 	}
+	httpMap[port] = p
 	return true
 }
-func (p *http)SetTipsMap(m map[string]interface{}) bool {
+func SetTipsMap(port uint64, m map[string]interface{}) bool {
+	p, exist := httpMap[port]
+	if !exist {
+		p = &http{}
+	}
 	dataType , _ := json.Marshal(m)
 	dataString := string(dataType)
 	err := json.Unmarshal([]byte(dataString), &p.TipsMap)
 	if err != nil {
 		return false
 	}
+	httpMap[port] = p
 	return true
 }
-func (p *http)SetIsCheckedRes(isCheckedRes uint32) {
+func SetIsCheckedRes(port uint64, isCheckedRes uint32) {
+	p, exist := httpMap[port]
+	if !exist {
+		p = &http{}
+	}
 	if (isCheckedRes == 1) {
 		p.isCheckedRes = true
 	} else {
 		p.isCheckedRes = false
 	}
+	httpMap[port] = p
 }
-
-func (res *Response)MSG(params RstType) {
-	if res.isCheckedRes {
-		val, exist := res.c.Get("interfaceInfo")
-		if exist {
-			api, ok := val.(Api)
-			if ok && len(api.RspMsgId) > 0 && api.RspMsgId != "0" && params.CodeKey == "SUCC" {
-				var obj interface{}
-				switch ret := params.Data.(type) {
-				case string:
-					json.Unmarshal([]byte(ret), &obj)
-				default:
-					obj = params.Data
-				}
-				retMsgData := H.cycleCheckParams(H.FieldMap[api.RspMsgId].(map[string]interface{}), obj)
-				if retMsgData != nil {
-					params.CodeKey = "SVC_ERR"
-					params.Msg = retMsgData
-				}
-			}
-		}
-	}
-
-	code := ""
-	msg := ""
-	if v, ok := res.ResCodeMap[params.CodeKey]; ok {
-		code = v.RstCode
-		msg = v.CodeDesc
-	}
-
-	if params.Msg == nil || params.Msg == "" {
-		if v, ok := res.TipsMap[params.CodeKey]; ok {
-			msg = v.Tips
-		}
-	} else {
-		switch ret := params.Msg.(type) {
-		case string:
-			msg = ret
-		case []string:
-			msg = res.ForMatMsg(ret)
-		default:
-		}
-	}
-
-	var data interface{}
-	switch ret := params.Data.(type) {
-	case string:
-		json.Unmarshal([]byte(ret), &data)
-	default:
-		data = params.Data
-	}
-
-	res.c.JSON(200, gin.H{
-		"code": code,
-		"msg": msg,
-		"data": data,
-	})
-}
-func (res *Response)ForMatMsg(msgList []string) string {
-	msg := ""
-	if len(msgList) > 0 {
-		if v, ok := res.TipsMap[msgList[0]]; ok {
-			msg = v.Tips
-			if len(msgList) > 1 {
-				cutMsg := msg
-				msgTemp := ""
-				for i:=1; i<=len(msgList) -1; i++ {
-					tplStr := cutMsg[0: len(cutMsg)]
-					idx := strings.Index(tplStr, "%")
-					if idx == -1 {
-						return msg
-					}
-
-					eIdx := idx +2
-					if i>=len(msgList) -1 {
-						eIdx = len(cutMsg)
-					}
-					tMsg := tplStr[0 : eIdx]
-					msgTemp += fmt.Sprintf(tMsg, msgList[i])
-					cutMsg = cutMsg[idx+2 : len(cutMsg)]
-				}
-				msg = msgTemp
-			}
-		} else {
-			msg = msgList[0]
-		}
-	}
-
-	return msg
-}
-func (res *Response)GetInterfaceInfo(c *gin.Context) *Api {
-	val, exist := c.Get("interfaceInfo")
-	if exist {
-		i, ok := val.(Api)
-		if ok {
-			return &i
-		}
-	}
-	return nil
-}
-var R = &Response{isCheckedRes: false}
-
-var H = &http{}
-func WebCommResponse(c *gin.Context) {
-	retData := RstType{CodeKey: "SUCC", Msg: "", Data: "[]"}
-	H.Response.MSG(retData)
-}
-func (p *http)SetRoutes(pGin *gin.Engine, moduleObjMap map[string]interface{}) {
+func SetRoutes(port uint64, pGin *gin.Engine, moduleObjMap map[string]interface{}) {
+	p, _ := httpMap[port]
 	for moduleId, subUriMap := range p.ApiMap {
 		var module = Module{}
 		for _, module = range p.ModuleMap {
@@ -259,10 +174,10 @@ func (p *http)SetRoutes(pGin *gin.Engine, moduleObjMap map[string]interface{}) {
 				inputs := make([]reflect.Value, 2)
 				inputs[0] = reflect.ValueOf(subUri)
 				if !reflect.ValueOf(moduleObjMap[module.Uri]).IsValid() {
-					inputs[1] = reflect.ValueOf(WebCommResponse)
+					inputs[1] = reflect.ValueOf(webCommResponse)
 				} else {
 					if !reflect.ValueOf(moduleObjMap[module.Uri]).MethodByName(strings.Title(subUri)).IsValid() {
-						inputs[1] = reflect.ValueOf(WebCommResponse)
+						inputs[1] = reflect.ValueOf(webCommResponse)
 					} else {
 						inputs[1] = reflect.ValueOf(moduleObjMap[module.Uri]).MethodByName(strings.Title(subUri))
 					}
@@ -272,13 +187,36 @@ func (p *http)SetRoutes(pGin *gin.Engine, moduleObjMap map[string]interface{}) {
 		}
 	}
 }
-func (p *http)CheckReq(c *gin.Context) {
+func SetFirstFilter(port uint64, pGin *gin.Engine) {
+	p, _ := httpMap[port]
+	pGin.Use(p.checkReq)
+}
+func GetInterfaceInfo(c *gin.Context) *Api {
+	val, exist := c.Get("interfaceInfo")
+	if exist {
+		i, ok := val.(Api)
+		if ok {
+			return &i
+		}
+	}
+	return nil
+}
+func Response(c *gin.Context, codeKey string, msg interface{}, data interface{}) {
+	retData := RstType{CodeKey: codeKey, Msg: msg, Data: data}
+	obj, _ := c.Get("_HTTP_CFG")
+	p, _ := obj.(*http)
+	p.msg(retData)
+}
+
+var httpMap = make(map[uint64]*http)
+func (p *http)checkReq(c *gin.Context) {
 	if c.Request.Method == "OPTIONS" {
 		c.Abort()
 		return
 	}
 
-	p.Response = &Response{ResCodeMap: p.ResCodeMap, TipsMap: p.TipsMap, isCheckedRes: false, c: c}
+	c.Set("_HTTP_CFG", p)
+	p.c = c
 
 	baseUrlList := strings.Split(c.Request.URL.Path, "/")
 	subUri := baseUrlList[len(baseUrlList) - 1]
@@ -292,7 +230,7 @@ func (p *http)CheckReq(c *gin.Context) {
 	module, ok := p.ModuleMap[baseUrl]
 	rstType := RstType{CodeKey: "CLT_ERR", Msg: []string{"WEBX_ERR_URL"}, Data: "[]"}
 	if !ok {
-		H.Response.MSG(rstType)
+		Response(c, "CLT_ERR", []string{"WEBX_ERR_URL"}, "[]")
 		c.Abort()
 		return
 	}
@@ -301,7 +239,7 @@ func (p *http)CheckReq(c *gin.Context) {
 		p.ApiMap[module.Id][subUri] == nil {
 		_, ok := p.ApiMap[module.Id][subUri][strings.ToLower(c.Request.Method)]
 		if !ok {
-			H.Response.MSG(rstType)
+			Response(c, "CLT_ERR", []string{"WEBX_ERR_URL"}, "[]")
 			c.Abort()
 			return
 		}
@@ -327,12 +265,11 @@ func (p *http)CheckReq(c *gin.Context) {
 	retMsgData := p.cycleCheckParams(p.FieldMap[reqMsgId].(map[string]interface{}), body)
 	if retMsgData != nil {
 		rstType.Msg = retMsgData
-		H.Response.MSG(rstType)
+		Response(c, "CLT_ERR", retMsgData, "[]")
 		c.Abort()
 		return
 	}
 
-	p.Response.SetIsCheckedRes(p.isCheckedRes)
 	c.Next()
 }
 func (p *http)cycleCheckParams(msgFieldMap map[string]interface{}, data interface{}) interface{}{
@@ -404,18 +341,6 @@ func (p *http)cycleCheckParams(msgFieldMap map[string]interface{}, data interfac
 
 	return nil
 }
-
-func getCustomTips(tips string) string {
-	if len(tips) > 3 && tips[0:2] == "${" && fmt.Sprintf("%c", tips[len(tips)-1]) == "}" {
-		tipsKey := tips[2:len(tips)-1]
-		tipsKey = strings.TrimSpace(tipsKey)
-		if v, ok := R.TipsMap[tipsKey]; ok {
-			return v.Tips
-		}
-	}
-	return tips
-}
-
 func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 	if fCfgItem.IfMust == ""{
 		return nil
@@ -429,7 +354,7 @@ func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 	if !ok || paramValue == "" {
 		tips := fmt.Sprint(fCfgItem.NullTips)
 		if len(tips) > 0 {
-			return getCustomTips(tips)
+			return p.getCustomTips(tips)
 		}
 		return []string{"WEBX_NULL_FIELD", "string", fCfgItem.FieldUrl}
 	}
@@ -469,7 +394,7 @@ func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 			if !isPass {
 				tips := fmt.Sprint(rule["ruleDesc"])
 				if len(tips) > 0 {
-					return getCustomTips(tips)
+					return p.getCustomTips(tips)
 				}
 				resByte, _ := json.Marshal(exprVal)
 				return []string{"WEBX_WRONG_RANGE", fCfgItem.FieldUrl, string(resByte)}
@@ -521,7 +446,7 @@ func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 			if !isPass {
 				tips := fmt.Sprint(rule["ruleDesc"])
 				if len(tips) > 0 {
-					return getCustomTips(tips)
+					return p.getCustomTips(tips)
 				}
 				resByte, _ := json.Marshal(exprVal)
 				if rule["isMatched"].(float64) == 1 {
@@ -564,7 +489,7 @@ func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 			if !isPass {
 				tips := fmt.Sprint(rule["ruleDesc"])
 				if len(tips) > 0 {
-					return getCustomTips(tips)
+					return p.getCustomTips(tips)
 				}
 				return []string{"WEBX_WRONG_REGEX_VALUE", fCfgItem.FieldUrl, str}
 			}
@@ -586,7 +511,7 @@ func (p *http)isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 	if !ok || paramValue == nil {
 		tips := fmt.Sprint(fCfgItem.NullTips)
 		if len(tips) > 0 {
-			return getCustomTips(tips)
+			return p.getCustomTips(tips)
 		}
 		return []string{"WEBX_NULL_FIELD", "number", fCfgItem.FieldUrl}
 	}
@@ -626,7 +551,7 @@ func (p *http)isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 			if !isPass {
 				tips := fmt.Sprint(rule["ruleDesc"])
 				if len(tips) > 0 {
-					return getCustomTips(tips)
+					return p.getCustomTips(tips)
 				}
 				resByte, _ := json.Marshal(exprVal)
 				return []string{"WEBX_WRONG_RANGE", fCfgItem.FieldUrl, string(resByte)}
@@ -657,7 +582,7 @@ func (p *http)isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 			if !isPass {
 				tips := fmt.Sprint(rule["ruleDesc"])
 				if len(tips) > 0 {
-					return getCustomTips(tips)
+					return p.getCustomTips(tips)
 				}
 				resByte, _ := json.Marshal(exprVal)
 				if rule["isMatched"].(float64) == 1 {
@@ -700,7 +625,7 @@ func (p *http)isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 			if !isPass {
 				tips := fmt.Sprint(rule["ruleDesc"])
 				if len(tips) > 0 {
-					return getCustomTips(tips)
+					return p.getCustomTips(tips)
 				}
 				return []string{"WEBX_WRONG_REGEX_VALUE", fCfgItem.FieldUrl, str}
 			}
@@ -724,7 +649,7 @@ func (p *http)isObjOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 	if paramValue == nil || err1 != nil || err2 != nil || len(m) == 0 {
 		tips := fmt.Sprint(fCfgItem.NullTips)
 		if len(tips) > 0 {
-			return getCustomTips(tips)
+			return p.getCustomTips(tips)
 		}
 		return []string{"WEBX_NULL_FIELD", "map", fCfgItem.FieldUrl}
 	}
@@ -763,7 +688,7 @@ func (p *http)isObjOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 			if !isPass {
 				tips := fmt.Sprint(rule["ruleDesc"])
 				if len(tips) > 0 {
-					return getCustomTips(tips)
+					return p.getCustomTips(tips)
 				}
 				resByte, _ := json.Marshal(exprVal)
 				return []string{"WEBX_WRONG_RANGE", fCfgItem.FieldUrl, string(resByte)}
@@ -788,7 +713,7 @@ func (p *http)isListOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 	if paramValue == nil || err1 != nil || err2 != nil || len(l) == 0 {
 		tips := fmt.Sprint(fCfgItem.NullTips)
 		if len(tips) > 0 {
-			return getCustomTips(tips)
+			return p.getCustomTips(tips)
 		}
 		return []string{"WEBX_NULL_FIELD", "list", fCfgItem.FieldUrl}
 	}
@@ -827,7 +752,7 @@ func (p *http)isListOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 			if !isPass {
 				tips := fmt.Sprint(rule["ruleDesc"])
 				if len(tips) > 0 {
-					return getCustomTips(tips)
+					return p.getCustomTips(tips)
 				}
 				resByte, _ := json.Marshal(exprVal)
 				return []string{"WEBX_WRONG_RANGE", fCfgItem.FieldUrl, string(resByte)}
@@ -836,4 +761,106 @@ func (p *http)isListOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 	}
 
 	return nil
+}
+func (p *http)msg(params RstType) {
+	if p.isCheckedRes {
+		val, exist := p.c.Get("interfaceInfo")
+		if exist {
+			api, ok := val.(Api)
+			if ok && len(api.RspMsgId) > 0 && api.RspMsgId != "0" && params.CodeKey == "SUCC" {
+				var obj interface{}
+				switch ret := params.Data.(type) {
+				case string:
+					json.Unmarshal([]byte(ret), &obj)
+				default:
+					obj = params.Data
+				}
+				retMsgData := p.cycleCheckParams(p.FieldMap[api.RspMsgId].(map[string]interface{}), obj)
+				if retMsgData != nil {
+					params.CodeKey = "SVC_ERR"
+					params.Msg = retMsgData
+				}
+			}
+		}
+	}
+
+	code := ""
+	msg := ""
+	if v, ok := p.ResCodeMap[params.CodeKey]; ok {
+		code = v.RstCode
+		msg = v.CodeDesc
+	}
+
+	if params.Msg == nil || params.Msg == "" {
+		if v, ok := p.TipsMap[params.CodeKey]; ok {
+			msg = v.Tips
+		}
+	} else {
+		switch ret := params.Msg.(type) {
+		case string:
+			msg = ret
+		case []string:
+			msg = p.forMatMsg(ret)
+		default:
+		}
+	}
+
+	var data interface{}
+	switch ret := params.Data.(type) {
+	case string:
+		json.Unmarshal([]byte(ret), &data)
+	default:
+		data = params.Data
+	}
+
+	p.c.JSON(200, gin.H{
+		"code": code,
+		"msg": msg,
+		"data": data,
+	})
+}
+func (p *http)forMatMsg(msgList []string) string {
+	msg := ""
+	if len(msgList) > 0 {
+		if v, ok := p.TipsMap[msgList[0]]; ok {
+			msg = v.Tips
+			if len(msgList) > 1 {
+				cutMsg := msg
+				msgTemp := ""
+				for i:=1; i<=len(msgList) -1; i++ {
+					tplStr := cutMsg[0: len(cutMsg)]
+					idx := strings.Index(tplStr, "%")
+					if idx == -1 {
+						return msg
+					}
+
+					eIdx := idx +2
+					if i>=len(msgList) -1 {
+						eIdx = len(cutMsg)
+					}
+					tMsg := tplStr[0 : eIdx]
+					msgTemp += fmt.Sprintf(tMsg, msgList[i])
+					cutMsg = cutMsg[idx+2 : len(cutMsg)]
+				}
+				msg = msgTemp
+			}
+		} else {
+			msg = msgList[0]
+		}
+	}
+
+	return msg
+}
+func (p *http)getCustomTips(tips string) string {
+	if len(tips) > 3 && tips[0:2] == "${" && fmt.Sprintf("%c", tips[len(tips)-1]) == "}" {
+		tipsKey := tips[2:len(tips)-1]
+		tipsKey = strings.TrimSpace(tipsKey)
+		if v, ok := p.TipsMap[tipsKey]; ok {
+			return v.Tips
+		}
+	}
+	return tips
+}
+func webCommResponse(c *gin.Context) {
+	Response(c, "SUCC", "", "[]")
 }
