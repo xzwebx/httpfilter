@@ -37,6 +37,9 @@ type Api struct {
 	RspMsgId string `json:"rspMsgId"`
 	SubUri string `json:"subUri"`
 	Meta string `json:"meta"`
+	AppMeta string `json:"appMeta"`
+	ServiceMeta string `json:"serviceMeta"`
+	ModuleMeta string `json:"moduleMeta"`
 }
 type filedCfg struct {
 	Id string `json:"id"`
