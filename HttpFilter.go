@@ -20,6 +20,8 @@ type http struct {
 	TipsMap map[string]Tips
 	isCheckedRes bool
 	c *gin.Context
+	dtoObjMap map[string]interface{}
+	moduleObjMap map[string]interface{}
 }
 type Module struct {
 	AppUri string `json:"appUri"`
@@ -80,6 +82,7 @@ func SetModuleMap(port uint64, m map[string]interface{}) bool {
 	p, exist := httpMap[port]
 	if !exist {
 		p = &http{}
+		httpMap[port] = p
 	}
 	dataType , _ := json.Marshal(m)
 	dataString := string(dataType)
@@ -87,14 +90,13 @@ func SetModuleMap(port uint64, m map[string]interface{}) bool {
 	if err != nil {
 		return false
 	}
-	httpMap[port] = p
-	p, exist = httpMap[port]
 	return true
 }
 func SetApiMap(port uint64, m map[string]interface{}) bool {
 	p, exist := httpMap[port]
 	if !exist {
 		p = &http{}
+		httpMap[port] = p
 	}
 	dataType , _ := json.Marshal(m)
 	dataString := string(dataType)
@@ -102,13 +104,13 @@ func SetApiMap(port uint64, m map[string]interface{}) bool {
 	if err != nil {
 		return false
 	}
-	httpMap[port] = p
 	return true
 }
 func SetFieldMap(port uint64, m map[string]interface{}) bool {
 	p, exist := httpMap[port]
 	if !exist {
 		p = &http{}
+		httpMap[port] = p
 	}
 	dataType , _ := json.Marshal(m)
 	dataString := string(dataType)
@@ -116,13 +118,13 @@ func SetFieldMap(port uint64, m map[string]interface{}) bool {
 	if err != nil {
 		return false
 	}
-	httpMap[port] = p
 	return true
 }
 func SetResCodeMap(port uint64, m map[string]interface{}) bool {
 	p, exist := httpMap[port]
 	if !exist {
 		p = &http{}
+		httpMap[port] = p
 	}
 	dataType , _ := json.Marshal(m)
 	dataString := string(dataType)
@@ -130,13 +132,13 @@ func SetResCodeMap(port uint64, m map[string]interface{}) bool {
 	if err != nil {
 		return false
 	}
-	httpMap[port] = p
 	return true
 }
 func SetTipsMap(port uint64, m map[string]interface{}) bool {
 	p, exist := httpMap[port]
 	if !exist {
 		p = &http{}
+		httpMap[port] = p
 	}
 	dataType , _ := json.Marshal(m)
 	dataString := string(dataType)
@@ -144,23 +146,24 @@ func SetTipsMap(port uint64, m map[string]interface{}) bool {
 	if err != nil {
 		return false
 	}
-	httpMap[port] = p
 	return true
 }
 func SetIsCheckedRes(port uint64, isCheckedRes uint32) {
 	p, exist := httpMap[port]
 	if !exist {
 		p = &http{}
+		httpMap[port] = p
 	}
 	if (isCheckedRes == 1) {
 		p.isCheckedRes = true
 	} else {
 		p.isCheckedRes = false
 	}
-	httpMap[port] = p
 }
-func SetRoutes(port uint64, pGin *gin.Engine, moduleObjMap map[string]interface{}) {
+func SetRoutes(port uint64, pGin *gin.Engine, moduleObjMap map[string]interface{}, dtoObjMap map[string]interface{}) {
 	p, _ := httpMap[port]
+	p.dtoObjMap = dtoObjMap
+	p.moduleObjMap = moduleObjMap
 	for moduleId, subUriMap := range p.ApiMap {
 		var module = Module{}
 		for _, module = range p.ModuleMap {
@@ -176,15 +179,16 @@ func SetRoutes(port uint64, pGin *gin.Engine, moduleObjMap map[string]interface{
 				fun := value.MethodByName(strings.ToUpper(method))
 				inputs := make([]reflect.Value, 2)
 				inputs[0] = reflect.ValueOf(subUri)
-				if !reflect.ValueOf(moduleObjMap[module.Uri]).IsValid() {
-					inputs[1] = reflect.ValueOf(webCommResponse)
-				} else {
-					if !reflect.ValueOf(moduleObjMap[module.Uri]).MethodByName(strings.Title(subUri)).IsValid() {
-						inputs[1] = reflect.ValueOf(webCommResponse)
-					} else {
-						inputs[1] = reflect.ValueOf(moduleObjMap[module.Uri]).MethodByName(strings.Title(subUri))
-					}
-				}
+				inputs[1] = reflect.ValueOf(p.webCommResponse)
+				//if !reflect.ValueOf(moduleObjMap[module.Uri]).IsValid() {
+				//	inputs[1] = reflect.ValueOf(webCommResponse)
+				//} else {
+				//	if !reflect.ValueOf(moduleObjMap[module.Uri]).MethodByName(strings.Title(subUri)).IsValid() {
+				//		inputs[1] = reflect.ValueOf(webCommResponse)
+				//	} else {
+				//		inputs[1] = reflect.ValueOf(moduleObjMap[module.Uri]).MethodByName(strings.Title(subUri))
+				//	}
+				//}
 				fun.Call(inputs)
 			}
 		}
@@ -864,6 +868,67 @@ func (p *http)getCustomTips(tips string) string {
 	}
 	return tips
 }
-func webCommResponse(c *gin.Context) {
+func (p *http)webCommResponse(c *gin.Context) {
+	baseUrlList := strings.Split(c.Request.URL.Path, "/")
+	subUri := baseUrlList[len(baseUrlList) - 1]
+	fullUrl := ""
+	baseUrl := ""
+	for idx := range baseUrlList {
+		if baseUrlList[idx] == "" {
+			continue
+		}
+		if idx<len(baseUrlList) - 1 {
+			baseUrl += "/" + baseUrlList[idx]
+		}
+		fullUrl += "/" + baseUrlList[idx]
+	}
+
+	implsObj, exist := p.moduleObjMap[baseUrl]
+	if !exist {
+		Response(c, "SUCC", "", "[]")
+		return
+	}
+
+	reqObj, exist := p.dtoObjMap[fullUrl]
+	if !exist {
+		Response(c, "SUCC", "", "[]")
+		return
+	}
+	dynamicType := reflect.TypeOf(reqObj)
+	newReq := reflect.New(dynamicType).Interface()
+
+	err := c.BindJSON(&newReq)
+	if err != nil {
+		Response(c, "CLT_ERR", err.Error(), "[]")
+		return
+	}
+
+	module, exist := p.ModuleMap[baseUrl]
+	if !exist {
+		Response(c, "SUCC", "", "[]")
+		return
+	}
+	api, exist := p.ApiMap[module.Id][subUri][strings.ToLower(c.Request.Method)]
+	if !exist {
+		Response(c, "SUCC", "", "[]")
+		return
+	}
+	implsObjValue := reflect.ValueOf(implsObj)
+	fun := implsObjValue.MethodByName(strings.Title(api.ModuleFun))
+	if fun.IsValid() {
+		inputs := make([]reflect.Value, 2)
+		inputs[0] = reflect.ValueOf(c)
+		inputs[1] = reflect.ValueOf(newReq)
+		results := fun.Call(inputs)
+		codeKey := results[0].Interface().(string)
+		if len(codeKey) == 0 {
+			codeKey = "SUCC"
+		}
+		msg := results[1].Interface().(string)
+		data := results[2].Interface()
+		Response(c, codeKey, msg, data)
+		return
+	}
+
 	Response(c, "SUCC", "", "[]")
 }
