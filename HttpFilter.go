@@ -895,7 +895,7 @@ func (p *http)webCommResponse(c *gin.Context) {
 		return
 	}
 	dynamicType := reflect.TypeOf(reqObj)
-	newReq := reflect.New(dynamicType).Interface()
+	newReq := reflect.New(dynamicType.Elem()).Interface()
 
 	err := c.BindJSON(&newReq)
 	if err != nil {
