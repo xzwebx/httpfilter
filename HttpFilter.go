@@ -180,15 +180,6 @@ func SetRoutes(port uint64, pGin *gin.Engine, moduleObjMap map[string]interface{
 				inputs := make([]reflect.Value, 2)
 				inputs[0] = reflect.ValueOf(subUri)
 				inputs[1] = reflect.ValueOf(p.webCommResponse)
-				//if !reflect.ValueOf(moduleObjMap[module.Uri]).IsValid() {
-				//	inputs[1] = reflect.ValueOf(webCommResponse)
-				//} else {
-				//	if !reflect.ValueOf(moduleObjMap[module.Uri]).MethodByName(strings.Title(subUri)).IsValid() {
-				//		inputs[1] = reflect.ValueOf(webCommResponse)
-				//	} else {
-				//		inputs[1] = reflect.ValueOf(moduleObjMap[module.Uri]).MethodByName(strings.Title(subUri))
-				//	}
-				//}
 				fun.Call(inputs)
 			}
 		}
@@ -222,6 +213,7 @@ func (p *http)checkReq(c *gin.Context) {
 		return
 	}
 
+	c.Header("Content-Type", "application/json")
 	c.Set("_HTTP_CFG", p)
 	p.c = c
 
@@ -896,12 +888,7 @@ func (p *http)webCommResponse(c *gin.Context) {
 	}
 	dynamicType := reflect.TypeOf(reqObj)
 	newReq := reflect.New(dynamicType.Elem()).Interface()
-
-	err := c.BindJSON(&newReq)
-	if err != nil {
-		Response(c, "CLT_ERR", err.Error(), "[]")
-		return
-	}
+	c.BindJSON(&newReq)
 
 	module, exist := p.ModuleMap[baseUrl]
 	if !exist {
