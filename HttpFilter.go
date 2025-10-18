@@ -46,6 +46,7 @@ type Api struct {
 type filedCfg struct {
 	Id string `json:"id"`
 	FieldUrl string `json:"fieldUrl"`
+	FieldCode string `json:"fieldCode"`
 	FieldType string `json:"fieldType"`
 	ExpVal string `json:"expVal"`
 	LenLimit uint32 `json:"lenLimit"`
@@ -54,6 +55,7 @@ type filedCfg struct {
 	ExprVal []interface{} `json:"exprVal"`
 	FieldDesc string `json:"fieldDesc"`
 	IfMust string `json:"ifMust"`
+	IsRecursed int `json:"isRecursed"`
 	KeyType string `json:"keyType"`
 	NullTips string `json:"nullTips"`
 }
@@ -310,13 +312,52 @@ func (p *http)cycleCheckParams(msgFieldMap map[string]interface{}, data interfac
 			continue
 		}
 
+		if fCfgItem.IsRecursed == 1 {
+			if fCfgItem.FieldType == "LIST" {
+				for key, val := range msgFieldMap {
+					if key == "__FieldCfg" {
+						continue
+					}
+
+					m := val.(map[string]interface{})
+					var fCfgItem1 filedCfg
+					resByte, _ := json.Marshal(m["__FieldCfg"])
+					err := json.Unmarshal(resByte, &fCfgItem1)
+					if err != nil{
+						continue
+					}
+					if fCfgItem1.FieldType != "OBJ" {
+						continue
+					}
+
+					subM := val.(map[string]interface{})
+					_, exist := subM[fCfgItem.FieldCode]
+					if !exist {
+						m1 := msgFieldMap
+						fCfgItem.IfMust = "NO"
+						m1["__FieldCfg"] = fCfgItem
+						subM[fCfgItem.FieldCode] = m1
+						msgFieldMap[key] = subM
+					}
+				}
+			} else if fCfgItem.FieldType == "OBJ" {
+				_, exist := msgFieldMap[fCfgItem.FieldCode]
+				if !exist {
+					m1 := msgFieldMap
+					fCfgItem.IfMust = "NO"
+					m1["__FieldCfg"] = fCfgItem
+					msgFieldMap[fCfgItem.FieldCode] = m1
+				}
+			}
+		}
+
 		if fCfgItem.FieldType == "LIST" || (fCfgItem.FieldType == "OBJ" && fCfgItem.KeyType == "VOBJ") {
 			if isRoot {
 				retMsgData = p.cycleCheckParams(value.(map[string]interface{}), data)
 				if retMsgData != nil {
 					return retMsgData
 				}
-			} else {
+			} else if data != nil {
 				l, _ := data.([]interface{})
 				for _, v := range l {
 					retMsgData = p.cycleCheckParams(value.(map[string]interface{}), v)
@@ -329,8 +370,10 @@ func (p *http)cycleCheckParams(msgFieldMap map[string]interface{}, data interfac
 			if isRoot {
 				retMsgData = p.cycleCheckParams(value.(map[string]interface{}), data)
 			} else {
-				m, _ := data.(map[string]interface{})
-				retMsgData = p.cycleCheckParams(value.(map[string]interface{}), m[key])
+				if data != nil {
+					m, _ := data.(map[string]interface{})
+					retMsgData = p.cycleCheckParams(value.(map[string]interface{}), m[key])
+				}
 			}
 			if retMsgData != nil {
 				return retMsgData
