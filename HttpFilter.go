@@ -931,7 +931,9 @@ func (p *http)webCommResponse(c *gin.Context) {
 	}
 	dynamicType := reflect.TypeOf(reqObj)
 	newReq := reflect.New(dynamicType.Elem()).Interface()
-	c.BindJSON(&newReq)
+	if c.Request.ContentLength > 0 {
+		c.BindJSON(&newReq)
+	}
 
 	module, exist := p.ModuleMap[baseUrl]
 	if !exist {
