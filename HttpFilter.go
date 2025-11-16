@@ -205,7 +205,7 @@ func Response(c *gin.Context, codeKey string, msg interface{}, data interface{})
 	retData := RstType{CodeKey: codeKey, Msg: msg, Data: data}
 	obj, _ := c.Get("_HTTP_CFG")
 	p, _ := obj.(*http)
-	p.msg(retData)
+	p.msg(c, retData)
 }
 
 var httpMap = make(map[uint64]*http)
@@ -217,7 +217,6 @@ func (p *http)checkReq(c *gin.Context) {
 
 	c.Header("Content-Type", "application/json")
 	c.Set("_HTTP_CFG", p)
-	p.c = c
 
 	baseUrlList := strings.Split(c.Request.URL.Path, "/")
 	subUri := baseUrlList[len(baseUrlList) - 1]
@@ -256,6 +255,7 @@ func (p *http)checkReq(c *gin.Context) {
 
 	data, err := c.GetRawData()
 	if err != nil{
+		c.Abort()
 		fmt.Println(err.Error())
 		return
 	}
@@ -804,9 +804,9 @@ func (p *http)isListOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 
 	return nil
 }
-func (p *http)msg(params RstType) {
+func (p *http)msg(c *gin.Context, params RstType) {
 	if p.isCheckedRes {
-		val, exist := p.c.Get("interfaceInfo")
+		val, exist := c.Get("interfaceInfo")
 		if exist {
 			api, ok := val.(Api)
 			if ok && len(api.RspMsgId) > 0 && api.RspMsgId != "0" && params.CodeKey == "SUCC" {
@@ -855,7 +855,7 @@ func (p *http)msg(params RstType) {
 		data = params.Data
 	}
 
-	p.c.JSON(200, gin.H{
+	c.JSON(200, gin.H{
 		"code": code,
 		"msg": msg,
 		"data": data,
