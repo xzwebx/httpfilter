@@ -29,6 +29,7 @@ type Module struct {
 	Id string `json:"id"`
 	RouteDesc string `json:"routeDesc"`
 	Uri string `json:"uri"`
+	Meta string `json:"meta"`
 }
 type Api struct {
 	FunDesc string `json:"funDesc"`
@@ -39,9 +40,6 @@ type Api struct {
 	RspMsgId string `json:"rspMsgId"`
 	SubUri string `json:"subUri"`
 	Meta string `json:"meta"`
-	AppMeta string `json:"appMeta"`
-	ServiceMeta string `json:"serviceMeta"`
-	ModuleMeta string `json:"moduleMeta"`
 }
 type filedCfg struct {
 	Id string `json:"id"`
@@ -191,8 +189,18 @@ func SetFirstFilter(port uint64, pGin *gin.Engine) {
 	p, _ := httpMap[port]
 	pGin.Use(p.checkReq)
 }
+func GetModuleInfo(c *gin.Context) *Module {
+	val, exist := c.Get("__moduleInfo")
+	if exist {
+		m, ok := val.(Module)
+		if ok {
+			return &m
+		}
+	}
+	return nil
+}
 func GetInterfaceInfo(c *gin.Context) *Api {
-	val, exist := c.Get("interfaceInfo")
+	val, exist := c.Get("__interfaceInfo")
 	if exist {
 		i, ok := val.(Api)
 		if ok {
@@ -245,7 +253,8 @@ func (p *http)checkReq(c *gin.Context) {
 		}
 	}
 
-	c.Set("interfaceInfo", p.ApiMap[module.Id][subUri][strings.ToLower(c.Request.Method)])
+	c.Set("__moduleInfo", module)
+	c.Set("__interfaceInfo", p.ApiMap[module.Id][subUri][strings.ToLower(c.Request.Method)])
 
 	reqMsgId := p.ApiMap[module.Id][subUri][strings.ToLower(c.Request.Method)].ReqMsgId
 	if len(reqMsgId) <= 0 || reqMsgId == "0" {
@@ -806,7 +815,7 @@ func (p *http)isListOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 }
 func (p *http)msg(c *gin.Context, params RstType) {
 	if p.isCheckedRes {
-		val, exist := c.Get("interfaceInfo")
+		val, exist := c.Get("__interfaceInfo")
 		if exist {
 			api, ok := val.(Api)
 			if ok && len(api.RspMsgId) > 0 && api.RspMsgId != "0" && params.CodeKey == "SUCC" {
