@@ -272,12 +272,15 @@ func (p *http)checkReq(c *gin.Context) {
 	_ = json.Unmarshal(data, &body)
 
 	c.Request.Body = ioutil.NopCloser(bytes.NewBuffer(data))
-	retMsgData := p.cycleCheckParams(p.FieldMap[reqMsgId].(map[string]interface{}), body)
-	if retMsgData != nil {
-		rstType.Msg = retMsgData
-		Response(c, "CLT_ERR", retMsgData, "[]")
-		c.Abort()
-		return
+
+	for _, m := range p.FieldMap[reqMsgId].(map[string]interface{}) {
+		retMsgData := p.cycleCheckParams(m.(map[string]interface{}), body)
+		if retMsgData != nil {
+			rstType.Msg = retMsgData
+			Response(c, "CLT_ERR", retMsgData, "[]")
+			c.Abort()
+			return
+		}
 	}
 
 	c.Next()
@@ -285,24 +288,15 @@ func (p *http)checkReq(c *gin.Context) {
 func (p *http)cycleCheckParams(msgFieldMap map[string]interface{}, data interface{}) interface{}{
 	var retMsgData interface{} = nil
 
-	if msgFieldMap == nil {
+	if msgFieldMap == nil || msgFieldMap["__FieldCfg"] == nil {
 		return nil
 	}
 
 	var fCfgItem filedCfg
-	isRoot := true
-	if msgFieldMap["__FieldCfg"] != nil {
-		isRoot = false
-		resByte, _ := json.Marshal(msgFieldMap["__FieldCfg"])
-		json.Unmarshal(resByte, &fCfgItem)
-	}
+	resByte, _ := json.Marshal(msgFieldMap["__FieldCfg"])
+	json.Unmarshal(resByte, &fCfgItem)
 
 	for key, value := range msgFieldMap {
-		if isRoot {
-			resByte, _ := json.Marshal(((value.(map[string]interface{}))["__FieldCfg"]))
-			json.Unmarshal(resByte, &fCfgItem)
-		}
-
 		if fCfgItem.FieldType == "STR" {
 			retMsgData = p.isStringOk(fCfgItem, data)
 		} else if fCfgItem.FieldType == "INT" {
@@ -360,15 +354,29 @@ func (p *http)cycleCheckParams(msgFieldMap map[string]interface{}, data interfac
 			}
 		}
 
-		if fCfgItem.FieldType == "LIST" || (fCfgItem.FieldType == "OBJ" && fCfgItem.KeyType == "VOBJ") {
-			if isRoot {
-				retMsgData = p.cycleCheckParams(value.(map[string]interface{}), data)
-				if retMsgData != nil {
-					return retMsgData
+		subMap, ok := value.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		subMapCfgItem, exist := subMap["__FieldCfg"]
+		if !exist {
+			continue
+		}
+		var fSubCfgItem filedCfg
+		resByte, _ := json.Marshal(subMapCfgItem)
+		json.Unmarshal(resByte, &fSubCfgItem)
+
+		if fCfgItem.FieldType == "LIST" || (fCfgItem.FieldType == "OBJ" && fSubCfgItem.KeyType == "VSTR") {
+			switch val := data.(type) {
+			case map[string]interface{}:
+				for _, v := range val {
+					retMsgData = p.cycleCheckParams(value.(map[string]interface{}), v)
+					if retMsgData != nil {
+						return retMsgData
+					}
 				}
-			} else if data != nil {
-				l, _ := data.([]interface{})
-				for _, v := range l {
+			case []interface{}:
+				for _, v := range val {
 					retMsgData = p.cycleCheckParams(value.(map[string]interface{}), v)
 					if retMsgData != nil {
 						return retMsgData
@@ -376,11 +384,9 @@ func (p *http)cycleCheckParams(msgFieldMap map[string]interface{}, data interfac
 				}
 			}
 		} else {
-			if isRoot {
-				retMsgData = p.cycleCheckParams(value.(map[string]interface{}), data)
-			} else {
-				if data != nil {
-					m, _ := data.(map[string]interface{})
+			if data != nil {
+				m, ok := data.(map[string]interface{})
+				if ok {
 					retMsgData = p.cycleCheckParams(value.(map[string]interface{}), m[key])
 				}
 			}
@@ -826,10 +832,12 @@ func (p *http)msg(c *gin.Context, params RstType) {
 				default:
 					obj = params.Data
 				}
-				retMsgData := p.cycleCheckParams(p.FieldMap[api.RspMsgId].(map[string]interface{}), obj)
-				if retMsgData != nil {
-					params.CodeKey = "SVC_ERR"
-					params.Msg = retMsgData
+				for _, m := range p.FieldMap[api.RspMsgId].(map[string]interface{}) {
+					retMsgData := p.cycleCheckParams(m.(map[string]interface{}), obj)
+					if retMsgData != nil {
+						params.CodeKey = "SVC_ERR"
+						params.Msg = retMsgData
+					}
 				}
 			}
 		}
