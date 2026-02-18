@@ -4,77 +4,78 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/gin-gonic/gin"
 	"io/ioutil"
 	"math"
 	"reflect"
-	"regexp"
 	"strings"
+
+	"github.com/dlclark/regexp2"
+	"github.com/gin-gonic/gin"
 )
 
 type http struct {
-	ModuleMap map[string]Module
-	ApiMap map[string]map[string]map[string]Api
-	FieldMap map[string]interface{}
-	ResCodeMap map[string]ResCode
-	TipsMap map[string]Tips
+	ModuleMap    map[string]Module
+	ApiMap       map[string]map[string]map[string]Api
+	FieldMap     map[string]interface{}
+	ResCodeMap   map[string]ResCode
+	TipsMap      map[string]Tips
 	isCheckedRes bool
-	c *gin.Context
-	dtoObjMap map[string]interface{}
+	c            *gin.Context
+	dtoObjMap    map[string]interface{}
 	moduleObjMap map[string]interface{}
 }
 type Module struct {
-	AppUri string `json:"appUri"`
-	FilePath string `json:"filePath"`
-	Id string `json:"id"`
+	AppUri    string `json:"appUri"`
+	FilePath  string `json:"filePath"`
+	Id        string `json:"id"`
 	RouteDesc string `json:"routeDesc"`
-	Uri string `json:"uri"`
-	Meta string `json:"meta"`
+	Uri       string `json:"uri"`
+	Meta      string `json:"meta"`
 }
 type Api struct {
-	FunDesc string `json:"funDesc"`
-	Method string `json:"method"`
+	FunDesc   string `json:"funDesc"`
+	Method    string `json:"method"`
 	ModuleFun string `json:"moduleFun"`
-	ModuleId string `json:"moduleId"`
-	ReqMsgId string `json:"reqMsgId"`
-	RspMsgId string `json:"rspMsgId"`
-	SubUri string `json:"subUri"`
-	Meta string `json:"meta"`
+	ModuleId  string `json:"moduleId"`
+	ReqMsgId  string `json:"reqMsgId"`
+	RspMsgId  string `json:"rspMsgId"`
+	SubUri    string `json:"subUri"`
+	Meta      string `json:"meta"`
 }
 type filedCfg struct {
-	Id string `json:"id"`
-	FieldUrl string `json:"fieldUrl"`
-	FieldCode string `json:"fieldCode"`
-	FieldType string `json:"fieldType"`
-	ExpVal string `json:"expVal"`
-	LenLimit uint32 `json:"lenLimit"`
-	Rules interface{} `json:"rules"`
-	CheckType string `json:"checkType"`
-	ExprVal []interface{} `json:"exprVal"`
-	FieldDesc string `json:"fieldDesc"`
-	IfMust string `json:"ifMust"`
-	IsRecursed int `json:"isRecursed"`
-	KeyType string `json:"keyType"`
-	NullTips string `json:"nullTips"`
+	Id         string        `json:"id"`
+	FieldUrl   string        `json:"fieldUrl"`
+	FieldCode  string        `json:"fieldCode"`
+	FieldType  string        `json:"fieldType"`
+	ExpVal     string        `json:"expVal"`
+	LenLimit   uint32        `json:"lenLimit"`
+	Rules      interface{}   `json:"rules"`
+	CheckType  string        `json:"checkType"`
+	ExprVal    []interface{} `json:"exprVal"`
+	FieldDesc  string        `json:"fieldDesc"`
+	IfMust     string        `json:"ifMust"`
+	IsRecursed int           `json:"isRecursed"`
+	KeyType    string        `json:"keyType"`
+	NullTips   string        `json:"nullTips"`
 }
 type Rule struct {
-	FieldId string `json:"fieldId"`
+	FieldId   string `json:"fieldId"`
 	CheckType string `json:"checkType"`
-	ExprVal []interface{}
+	ExprVal   []interface{}
 }
 
 type RstType struct {
 	CodeKey string
-	Msg interface{}
-	Data interface{}
+	Msg     interface{}
+	Data    interface{}
 }
 type ResCode struct {
-	RstKey string `json:"rstKey"`
-	RstCode string `json:"rstCode"`
+	RstKey   string `json:"rstKey"`
+	RstCode  string `json:"rstCode"`
 	CodeDesc string `json:"codeDesc"`
 }
 type Tips struct {
-	Key string `json:"key"`
+	Key  string `json:"key"`
 	Tips string `json:"tips"`
 }
 
@@ -84,7 +85,7 @@ func SetModuleMap(port uint64, m map[string]interface{}) bool {
 		p = &http{}
 		httpMap[port] = p
 	}
-	dataType , _ := json.Marshal(m)
+	dataType, _ := json.Marshal(m)
 	dataString := string(dataType)
 	err := json.Unmarshal([]byte(dataString), &p.ModuleMap)
 	if err != nil {
@@ -98,7 +99,7 @@ func SetApiMap(port uint64, m map[string]interface{}) bool {
 		p = &http{}
 		httpMap[port] = p
 	}
-	dataType , _ := json.Marshal(m)
+	dataType, _ := json.Marshal(m)
 	dataString := string(dataType)
 	err := json.Unmarshal([]byte(dataString), &p.ApiMap)
 	if err != nil {
@@ -112,7 +113,7 @@ func SetFieldMap(port uint64, m map[string]interface{}) bool {
 		p = &http{}
 		httpMap[port] = p
 	}
-	dataType , _ := json.Marshal(m)
+	dataType, _ := json.Marshal(m)
 	dataString := string(dataType)
 	err := json.Unmarshal([]byte(dataString), &p.FieldMap)
 	if err != nil {
@@ -126,7 +127,7 @@ func SetResCodeMap(port uint64, m map[string]interface{}) bool {
 		p = &http{}
 		httpMap[port] = p
 	}
-	dataType , _ := json.Marshal(m)
+	dataType, _ := json.Marshal(m)
 	dataString := string(dataType)
 	err := json.Unmarshal([]byte(dataString), &p.ResCodeMap)
 	if err != nil {
@@ -140,7 +141,7 @@ func SetTipsMap(port uint64, m map[string]interface{}) bool {
 		p = &http{}
 		httpMap[port] = p
 	}
-	dataType , _ := json.Marshal(m)
+	dataType, _ := json.Marshal(m)
 	dataString := string(dataType)
 	err := json.Unmarshal([]byte(dataString), &p.TipsMap)
 	if err != nil {
@@ -154,7 +155,7 @@ func SetIsCheckedRes(port uint64, isCheckedRes uint32) {
 		p = &http{}
 		httpMap[port] = p
 	}
-	if (isCheckedRes == 1) {
+	if isCheckedRes == 1 {
 		p.isCheckedRes = true
 	} else {
 		p.isCheckedRes = false
@@ -217,7 +218,8 @@ func Response(c *gin.Context, codeKey string, msg interface{}, data interface{})
 }
 
 var httpMap = make(map[uint64]*http)
-func (p *http)checkReq(c *gin.Context) {
+
+func (p *http) checkReq(c *gin.Context) {
 	if c.Request.Method == "OPTIONS" {
 		c.Abort()
 		return
@@ -227,9 +229,9 @@ func (p *http)checkReq(c *gin.Context) {
 	c.Set("_HTTP_CFG", p)
 
 	baseUrlList := strings.Split(c.Request.URL.Path, "/")
-	subUri := baseUrlList[len(baseUrlList) - 1]
-	baseUrl:= ""
-	for idx:=0; idx<len(baseUrlList) - 1; idx++ {
+	subUri := baseUrlList[len(baseUrlList)-1]
+	baseUrl := ""
+	for idx := 0; idx < len(baseUrlList)-1; idx++ {
 		if baseUrlList[idx] != "" {
 			baseUrl += "/" + baseUrlList[idx]
 		}
@@ -263,7 +265,7 @@ func (p *http)checkReq(c *gin.Context) {
 	}
 
 	data, err := c.GetRawData()
-	if err != nil{
+	if err != nil {
 		c.Abort()
 		fmt.Println(err.Error())
 		return
@@ -285,7 +287,7 @@ func (p *http)checkReq(c *gin.Context) {
 
 	c.Next()
 }
-func (p *http)cycleCheckParams(msgFieldMap map[string]interface{}, data interface{}) interface{}{
+func (p *http) cycleCheckParams(msgFieldMap map[string]interface{}, data interface{}) interface{} {
 	var retMsgData interface{} = nil
 
 	if msgFieldMap == nil || msgFieldMap["__FieldCfg"] == nil {
@@ -326,7 +328,7 @@ func (p *http)cycleCheckParams(msgFieldMap map[string]interface{}, data interfac
 					var fCfgItem1 filedCfg
 					resByte, _ := json.Marshal(m["__FieldCfg"])
 					err := json.Unmarshal(resByte, &fCfgItem1)
-					if err != nil{
+					if err != nil {
 						continue
 					}
 					if fCfgItem1.FieldType != "OBJ" {
@@ -398,8 +400,8 @@ func (p *http)cycleCheckParams(msgFieldMap map[string]interface{}, data interfac
 
 	return nil
 }
-func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
-	if fCfgItem.IfMust == ""{
+func (p *http) isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{} {
+	if fCfgItem.IfMust == "" {
 		return nil
 	}
 
@@ -525,12 +527,15 @@ func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 				}
 
 				str := strings.Trim(v, "/")
-				reg, err := regexp.Compile(str)
-				if err != nil {
+				reg := regexp2.MustCompile(str, 0)
+				if reg == nil {
 					return []string{"SVC_ERR"}
 				}
 
-				found := reg.MatchString(s)
+				found, err := reg.MatchString(s)
+				if err != nil {
+					return []string{"SVC_ERR"}
+				}
 				if rule["matchType"] == "AND" {
 					if !found {
 						str = v
@@ -555,8 +560,8 @@ func (p *http)isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 
 	return nil
 }
-func (p *http)isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
-	if fCfgItem.IfMust == ""{
+func (p *http) isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{} {
+	if fCfgItem.IfMust == "" {
 		return nil
 	}
 
@@ -660,13 +665,16 @@ func (p *http)isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 					return []string{"SVC_ERR"}
 				}
 
-				reg, err := regexp.Compile(v)
-				if err != nil {
+				reg := regexp2.MustCompile(v, 0)
+				if reg == nil {
 					return []string{"SVC_ERR"}
 				}
 
 				s := fmt.Sprintf("%f", i)
-				found := reg.MatchString(s)
+				found, err := reg.MatchString(s)
+				if err != nil {
+					return []string{"SVC_ERR"}
+				}
 				if rule["matchType"] == "AND" {
 					if !found {
 						str = v
@@ -691,8 +699,8 @@ func (p *http)isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 
 	return nil
 }
-func (p *http)isObjOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
-	if fCfgItem.IfMust == ""{
+func (p *http) isObjOk(fCfgItem filedCfg, paramValue interface{}) interface{} {
+	if fCfgItem.IfMust == "" {
 		return nil
 	}
 
@@ -755,8 +763,8 @@ func (p *http)isObjOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 
 	return nil
 }
-func (p *http)isListOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
-	if fCfgItem.IfMust == ""{
+func (p *http) isListOk(fCfgItem filedCfg, paramValue interface{}) interface{} {
+	if fCfgItem.IfMust == "" {
 		return nil
 	}
 
@@ -819,7 +827,7 @@ func (p *http)isListOk(fCfgItem filedCfg, paramValue interface{}) interface{}{
 
 	return nil
 }
-func (p *http)msg(c *gin.Context, params RstType) {
+func (p *http) msg(c *gin.Context, params RstType) {
 	if p.isCheckedRes {
 		val, exist := c.Get("__interfaceInfo")
 		if exist {
@@ -874,11 +882,11 @@ func (p *http)msg(c *gin.Context, params RstType) {
 
 	c.JSON(200, gin.H{
 		"code": code,
-		"msg": msg,
+		"msg":  msg,
 		"data": data,
 	})
 }
-func (p *http)forMatMsg(msgList []string) string {
+func (p *http) forMatMsg(msgList []string) string {
 	msg := ""
 	if len(msgList) > 0 {
 		if v, ok := p.TipsMap[msgList[0]]; ok {
@@ -886,18 +894,18 @@ func (p *http)forMatMsg(msgList []string) string {
 			if len(msgList) > 1 {
 				cutMsg := msg
 				msgTemp := ""
-				for i:=1; i<=len(msgList) -1; i++ {
-					tplStr := cutMsg[0: len(cutMsg)]
+				for i := 1; i <= len(msgList)-1; i++ {
+					tplStr := cutMsg[0:len(cutMsg)]
 					idx := strings.Index(tplStr, "%")
 					if idx == -1 {
 						return msg
 					}
 
-					eIdx := idx +2
-					if i>=len(msgList) -1 {
+					eIdx := idx + 2
+					if i >= len(msgList)-1 {
 						eIdx = len(cutMsg)
 					}
-					tMsg := tplStr[0 : eIdx]
+					tMsg := tplStr[0:eIdx]
 					msgTemp += fmt.Sprintf(tMsg, msgList[i])
 					cutMsg = cutMsg[idx+2 : len(cutMsg)]
 				}
@@ -910,9 +918,9 @@ func (p *http)forMatMsg(msgList []string) string {
 
 	return msg
 }
-func (p *http)getCustomTips(tips string) string {
+func (p *http) getCustomTips(tips string) string {
 	if len(tips) > 3 && tips[0:2] == "${" && fmt.Sprintf("%c", tips[len(tips)-1]) == "}" {
-		tipsKey := tips[2:len(tips)-1]
+		tipsKey := tips[2 : len(tips)-1]
 		tipsKey = strings.TrimSpace(tipsKey)
 		if v, ok := p.TipsMap[tipsKey]; ok {
 			return v.Tips
@@ -920,16 +928,16 @@ func (p *http)getCustomTips(tips string) string {
 	}
 	return tips
 }
-func (p *http)webCommResponse(c *gin.Context) {
+func (p *http) webCommResponse(c *gin.Context) {
 	baseUrlList := strings.Split(c.Request.URL.Path, "/")
-	subUri := baseUrlList[len(baseUrlList) - 1]
+	subUri := baseUrlList[len(baseUrlList)-1]
 	fullUrl := ""
 	baseUrl := ""
 	for idx := range baseUrlList {
 		if baseUrlList[idx] == "" {
 			continue
 		}
-		if idx<len(baseUrlList) - 1 {
+		if idx < len(baseUrlList)-1 {
 			baseUrl += "/" + baseUrlList[idx]
 		}
 		fullUrl += "/" + baseUrlList[idx]
