@@ -18,9 +18,9 @@ type http struct {
 	ApiMap       map[string]map[string]map[string]Api
 	FieldMap     map[string]interface{}
 	ResCodeMap   map[string]ResCode
-	TipsMap      map[string]Tips
+	TipsMap      map[string]map[string]Tips
 	isCheckedRes bool
-	c            *gin.Context
+	DefaultLanguage string
 	dtoObjMap    map[string]interface{}
 	moduleObjMap map[string]interface{}
 }
@@ -141,13 +141,34 @@ func SetTipsMap(port uint64, m map[string]interface{}) bool {
 		p = &http{}
 		httpMap[port] = p
 	}
-	dataType, _ := json.Marshal(m)
-	dataString := string(dataType)
-	err := json.Unmarshal([]byte(dataString), &p.TipsMap)
-	if err != nil {
-		return false
+
+	p.TipsMap = make(map[string]map[string]Tips)
+	for language := range m {
+		subMap, exist := p.TipsMap[language]
+		if !exist {
+			subMap = make(map[string]Tips)
+		}
+		dataType, _ := json.Marshal(m[language])
+		dataString := string(dataType)
+		err := json.Unmarshal([]byte(dataString), &subMap)
+		if err != nil {
+			return false
+		}
+		p.TipsMap[language] = subMap
 	}
+
 	return true
+}
+func SetDefaultLanguage(port uint64, language string) {
+	p, exist := httpMap[port]
+	if !exist {
+		p = &http{}
+		httpMap[port] = p
+	}
+	p.DefaultLanguage = "CH"
+	if len(language) > 0 {
+		p.DefaultLanguage = language
+	}
 }
 func SetIsCheckedRes(port uint64, isCheckedRes uint32) {
 	p, exist := httpMap[port]
@@ -276,7 +297,11 @@ func (p *http) checkReq(c *gin.Context) {
 	c.Request.Body = ioutil.NopCloser(bytes.NewBuffer(data))
 
 	for _, m := range p.FieldMap[reqMsgId].(map[string]interface{}) {
-		retMsgData := p.cycleCheckParams(m.(map[string]interface{}), body)
+		language := c.GetHeader("X-Language")
+		if len(language) > 0 {
+			language = p.DefaultLanguage
+		}
+		retMsgData := p.cycleCheckParams(m.(map[string]interface{}), body, language)
 		if retMsgData != nil {
 			rstType.Msg = retMsgData
 			Response(c, "CLT_ERR", retMsgData, "[]")
@@ -287,7 +312,7 @@ func (p *http) checkReq(c *gin.Context) {
 
 	c.Next()
 }
-func (p *http) cycleCheckParams(msgFieldMap map[string]interface{}, data interface{}) interface{} {
+func (p *http) cycleCheckParams(msgFieldMap map[string]interface{}, data interface{}, language string) interface{} {
 	var retMsgData interface{} = nil
 
 	if msgFieldMap == nil || msgFieldMap["__FieldCfg"] == nil {
@@ -300,13 +325,13 @@ func (p *http) cycleCheckParams(msgFieldMap map[string]interface{}, data interfa
 
 	for key, value := range msgFieldMap {
 		if fCfgItem.FieldType == "STR" {
-			retMsgData = p.isStringOk(fCfgItem, data)
+			retMsgData = p.isStringOk(fCfgItem, data, language)
 		} else if fCfgItem.FieldType == "INT" {
-			retMsgData = p.isIntOk(fCfgItem, data)
+			retMsgData = p.isIntOk(fCfgItem, data, language)
 		} else if fCfgItem.FieldType == "OBJ" {
-			retMsgData = p.isObjOk(fCfgItem, data)
+			retMsgData = p.isObjOk(fCfgItem, data, language)
 		} else if fCfgItem.FieldType == "LIST" {
-			retMsgData = p.isListOk(fCfgItem, data)
+			retMsgData = p.isListOk(fCfgItem, data, language)
 		}
 
 		if retMsgData != nil {
@@ -372,14 +397,14 @@ func (p *http) cycleCheckParams(msgFieldMap map[string]interface{}, data interfa
 			switch val := data.(type) {
 			case map[string]interface{}:
 				for _, v := range val {
-					retMsgData = p.cycleCheckParams(value.(map[string]interface{}), v)
+					retMsgData = p.cycleCheckParams(value.(map[string]interface{}), v, language)
 					if retMsgData != nil {
 						return retMsgData
 					}
 				}
 			case []interface{}:
 				for _, v := range val {
-					retMsgData = p.cycleCheckParams(value.(map[string]interface{}), v)
+					retMsgData = p.cycleCheckParams(value.(map[string]interface{}), v, language)
 					if retMsgData != nil {
 						return retMsgData
 					}
@@ -389,7 +414,7 @@ func (p *http) cycleCheckParams(msgFieldMap map[string]interface{}, data interfa
 			if data != nil {
 				m, ok := data.(map[string]interface{})
 				if ok {
-					retMsgData = p.cycleCheckParams(value.(map[string]interface{}), m[key])
+					retMsgData = p.cycleCheckParams(value.(map[string]interface{}), m[key], language)
 				}
 			}
 			if retMsgData != nil {
@@ -400,7 +425,7 @@ func (p *http) cycleCheckParams(msgFieldMap map[string]interface{}, data interfa
 
 	return nil
 }
-func (p *http) isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{} {
+func (p *http) isStringOk(fCfgItem filedCfg, paramValue interface{}, language string) interface{} {
 	if fCfgItem.IfMust == "" {
 		return nil
 	}
@@ -413,7 +438,7 @@ func (p *http) isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}
 	if !ok || paramValue == "" {
 		tips := fmt.Sprint(fCfgItem.NullTips)
 		if len(tips) > 0 {
-			return p.getCustomTips(tips)
+			return p.getCustomTips(tips, language)
 		}
 		return []string{"WEBX_NULL_FIELD", "string", fCfgItem.FieldUrl}
 	}
@@ -453,7 +478,7 @@ func (p *http) isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}
 			if !isPass {
 				tips := fmt.Sprint(rule["ruleDesc"])
 				if len(tips) > 0 {
-					return p.getCustomTips(tips)
+					return p.getCustomTips(tips, language)
 				}
 				resByte, _ := json.Marshal(exprVal)
 				return []string{"WEBX_WRONG_RANGE", fCfgItem.FieldUrl, string(resByte)}
@@ -505,7 +530,7 @@ func (p *http) isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}
 			if !isPass {
 				tips := fmt.Sprint(rule["ruleDesc"])
 				if len(tips) > 0 {
-					return p.getCustomTips(tips)
+					return p.getCustomTips(tips, language)
 				}
 				resByte, _ := json.Marshal(exprVal)
 				if rule["isMatched"].(float64) == 1 {
@@ -551,7 +576,7 @@ func (p *http) isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}
 			if !isPass {
 				tips := fmt.Sprint(rule["ruleDesc"])
 				if len(tips) > 0 {
-					return p.getCustomTips(tips)
+					return p.getCustomTips(tips, language)
 				}
 				return []string{"WEBX_WRONG_REGEX_VALUE", fCfgItem.FieldUrl, str}
 			}
@@ -560,7 +585,7 @@ func (p *http) isStringOk(fCfgItem filedCfg, paramValue interface{}) interface{}
 
 	return nil
 }
-func (p *http) isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{} {
+func (p *http) isIntOk(fCfgItem filedCfg, paramValue interface{}, language string) interface{} {
 	if fCfgItem.IfMust == "" {
 		return nil
 	}
@@ -573,7 +598,7 @@ func (p *http) isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{} {
 	if !ok || paramValue == nil {
 		tips := fmt.Sprint(fCfgItem.NullTips)
 		if len(tips) > 0 {
-			return p.getCustomTips(tips)
+			return p.getCustomTips(tips, language)
 		}
 		return []string{"WEBX_NULL_FIELD", "number", fCfgItem.FieldUrl}
 	}
@@ -613,7 +638,7 @@ func (p *http) isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{} {
 			if !isPass {
 				tips := fmt.Sprint(rule["ruleDesc"])
 				if len(tips) > 0 {
-					return p.getCustomTips(tips)
+					return p.getCustomTips(tips, language)
 				}
 				resByte, _ := json.Marshal(exprVal)
 				return []string{"WEBX_WRONG_RANGE", fCfgItem.FieldUrl, string(resByte)}
@@ -644,7 +669,7 @@ func (p *http) isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{} {
 			if !isPass {
 				tips := fmt.Sprint(rule["ruleDesc"])
 				if len(tips) > 0 {
-					return p.getCustomTips(tips)
+					return p.getCustomTips(tips, language)
 				}
 				resByte, _ := json.Marshal(exprVal)
 				if rule["isMatched"].(float64) == 1 {
@@ -690,7 +715,7 @@ func (p *http) isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{} {
 			if !isPass {
 				tips := fmt.Sprint(rule["ruleDesc"])
 				if len(tips) > 0 {
-					return p.getCustomTips(tips)
+					return p.getCustomTips(tips, language)
 				}
 				return []string{"WEBX_WRONG_REGEX_VALUE", fCfgItem.FieldUrl, str}
 			}
@@ -699,7 +724,7 @@ func (p *http) isIntOk(fCfgItem filedCfg, paramValue interface{}) interface{} {
 
 	return nil
 }
-func (p *http) isObjOk(fCfgItem filedCfg, paramValue interface{}) interface{} {
+func (p *http) isObjOk(fCfgItem filedCfg, paramValue interface{}, language string) interface{} {
 	if fCfgItem.IfMust == "" {
 		return nil
 	}
@@ -714,7 +739,7 @@ func (p *http) isObjOk(fCfgItem filedCfg, paramValue interface{}) interface{} {
 	if paramValue == nil || err1 != nil || err2 != nil || len(m) == 0 {
 		tips := fmt.Sprint(fCfgItem.NullTips)
 		if len(tips) > 0 {
-			return p.getCustomTips(tips)
+			return p.getCustomTips(tips, language)
 		}
 		return []string{"WEBX_NULL_FIELD", "map", fCfgItem.FieldUrl}
 	}
@@ -753,7 +778,7 @@ func (p *http) isObjOk(fCfgItem filedCfg, paramValue interface{}) interface{} {
 			if !isPass {
 				tips := fmt.Sprint(rule["ruleDesc"])
 				if len(tips) > 0 {
-					return p.getCustomTips(tips)
+					return p.getCustomTips(tips, language)
 				}
 				resByte, _ := json.Marshal(exprVal)
 				return []string{"WEBX_WRONG_RANGE", fCfgItem.FieldUrl, string(resByte)}
@@ -763,7 +788,7 @@ func (p *http) isObjOk(fCfgItem filedCfg, paramValue interface{}) interface{} {
 
 	return nil
 }
-func (p *http) isListOk(fCfgItem filedCfg, paramValue interface{}) interface{} {
+func (p *http) isListOk(fCfgItem filedCfg, paramValue interface{}, language string) interface{} {
 	if fCfgItem.IfMust == "" {
 		return nil
 	}
@@ -778,7 +803,7 @@ func (p *http) isListOk(fCfgItem filedCfg, paramValue interface{}) interface{} {
 	if paramValue == nil || err1 != nil || err2 != nil || len(l) == 0 {
 		tips := fmt.Sprint(fCfgItem.NullTips)
 		if len(tips) > 0 {
-			return p.getCustomTips(tips)
+			return p.getCustomTips(tips, language)
 		}
 		return []string{"WEBX_NULL_FIELD", "list", fCfgItem.FieldUrl}
 	}
@@ -817,7 +842,7 @@ func (p *http) isListOk(fCfgItem filedCfg, paramValue interface{}) interface{} {
 			if !isPass {
 				tips := fmt.Sprint(rule["ruleDesc"])
 				if len(tips) > 0 {
-					return p.getCustomTips(tips)
+					return p.getCustomTips(tips, language)
 				}
 				resByte, _ := json.Marshal(exprVal)
 				return []string{"WEBX_WRONG_RANGE", fCfgItem.FieldUrl, string(resByte)}
@@ -828,6 +853,10 @@ func (p *http) isListOk(fCfgItem filedCfg, paramValue interface{}) interface{} {
 	return nil
 }
 func (p *http) msg(c *gin.Context, params RstType) {
+	language := c.GetHeader("X-Language")
+	if len(language) == 0 {
+		language = p.DefaultLanguage
+	}
 	if p.isCheckedRes {
 		val, exist := c.Get("__interfaceInfo")
 		if exist {
@@ -841,7 +870,7 @@ func (p *http) msg(c *gin.Context, params RstType) {
 					obj = params.Data
 				}
 				for _, m := range p.FieldMap[api.RspMsgId].(map[string]interface{}) {
-					retMsgData := p.cycleCheckParams(m.(map[string]interface{}), obj)
+					retMsgData := p.cycleCheckParams(m.(map[string]interface{}), obj, language)
 					if retMsgData != nil {
 						params.CodeKey = "SVC_ERR"
 						params.Msg = retMsgData
@@ -859,15 +888,18 @@ func (p *http) msg(c *gin.Context, params RstType) {
 	}
 
 	if params.Msg == nil || params.Msg == "" {
-		if v, ok := p.TipsMap[params.CodeKey]; ok {
-			msg = v.Tips
+		tipsMap, exist := p.TipsMap[language]
+		if exist {
+			if v, ok := tipsMap[params.CodeKey]; ok {
+				msg = v.Tips
+			}
 		}
 	} else {
 		switch ret := params.Msg.(type) {
 		case string:
 			msg = ret
 		case []string:
-			msg = p.forMatMsg(ret)
+			msg = p.forMatMsg(ret, language)
 		default:
 		}
 	}
@@ -886,46 +918,64 @@ func (p *http) msg(c *gin.Context, params RstType) {
 		"data": data,
 	})
 }
-func (p *http) forMatMsg(msgList []string) string {
+func (p *http) forMatMsg(msgList []string, language string) string {
 	msg := ""
-	if len(msgList) > 0 {
-		if v, ok := p.TipsMap[msgList[0]]; ok {
-			msg = v.Tips
-			if len(msgList) > 1 {
-				cutMsg := msg
-				msgTemp := ""
-				for i := 1; i <= len(msgList)-1; i++ {
-					tplStr := cutMsg[0:len(cutMsg)]
-					idx := strings.Index(tplStr, "%")
-					if idx == -1 {
-						return msg
-					}
 
-					eIdx := idx + 2
-					if i >= len(msgList)-1 {
-						eIdx = len(cutMsg)
-					}
-					tMsg := tplStr[0:eIdx]
-					msgTemp += fmt.Sprintf(tMsg, msgList[i])
-					cutMsg = cutMsg[idx+2 : len(cutMsg)]
-				}
-				msg = msgTemp
-			}
-		} else {
-			msg = msgList[0]
-		}
+	if len(msgList) == 0 {
+		return msg
 	}
 
-	return msg
+	tipsMap, exist1 := p.TipsMap[language]
+	v, exist2 := tipsMap[msgList[0]]
+	if !exist1 || !exist2 {
+		return msgList[0]
+	}
+
+	msg = v.Tips
+	if len(msgList) <= 1 {
+		return msg
+	}
+
+	cutMsg := msg
+	msgTemp := ""
+	for i := 1; i <= len(msgList)-1; i++ {
+		tplStr := cutMsg[0:len(cutMsg)]
+		idx := strings.Index(tplStr, "%")
+		if idx == -1 {
+			return msg
+		}
+
+		eIdx := idx + 2
+		if i >= len(msgList)-1 {
+			eIdx = len(cutMsg)
+		}
+		tMsg := tplStr[0:eIdx]
+		msgTemp += fmt.Sprintf(tMsg, msgList[i])
+		cutMsg = cutMsg[idx+2 : len(cutMsg)]
+	}
+
+	return msgTemp
 }
-func (p *http) getCustomTips(tips string) string {
-	if len(tips) > 3 && tips[0:2] == "${" && fmt.Sprintf("%c", tips[len(tips)-1]) == "}" {
-		tipsKey := tips[2 : len(tips)-1]
-		tipsKey = strings.TrimSpace(tipsKey)
-		if v, ok := p.TipsMap[tipsKey]; ok {
-			return v.Tips
-		}
+func (p *http) getCustomTips(tips, language string) string {
+	if len(tips) <= 3 {
+		return tips
 	}
+
+	if tips[0:2] != "${" || fmt.Sprintf("%c", tips[len(tips)-1]) != "}" {
+		return tips
+	}
+
+	tipsKey := tips[2 : len(tips)-1]
+	tipsKey = strings.TrimSpace(tipsKey)
+	tipsMap, exist := p.TipsMap[language]
+	if !exist {
+		return tips
+	}
+
+	if v, ok := tipsMap[tipsKey]; ok {
+		return v.Tips
+	}
+
 	return tips
 }
 func (p *http) webCommResponse(c *gin.Context) {
