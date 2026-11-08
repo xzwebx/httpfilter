@@ -14,15 +14,15 @@ import (
 )
 
 type http struct {
-	ModuleMap    map[string]Module
-	ApiMap       map[string]map[string]map[string]Api
-	FieldMap     map[string]interface{}
-	ResCodeMap   map[string]ResCode
-	TipsMap      map[string]map[string]Tips
-	isCheckedRes bool
+	ModuleMap       map[string]Module
+	ApiMap          map[string]map[string]map[string]Api
+	FieldMap        map[string]interface{}
+	ResCodeMap      map[string]ResCode
+	TipsMap         map[string]map[string]Tips
+	isCheckedRes    bool
 	DefaultLanguage string
-	dtoObjMap    map[string]interface{}
-	moduleObjMap map[string]interface{}
+	dtoObjMap       map[string]interface{}
+	moduleObjMap    map[string]interface{}
 }
 type Module struct {
 	AppUri    string `json:"appUri"`
@@ -736,6 +736,9 @@ func (p *http) isObjOk(fCfgItem filedCfg, paramValue interface{}, language strin
 	resByte, err1 := json.Marshal(paramValue)
 	var m map[string]interface{}
 	err2 := json.Unmarshal(resByte, &m)
+	if fCfgItem.IfMust == "NO" && err2 == nil && len(m) == 0 {
+		return nil
+	}
 	if paramValue == nil || err1 != nil || err2 != nil || len(m) == 0 {
 		tips := fmt.Sprint(fCfgItem.NullTips)
 		if len(tips) > 0 {
@@ -793,13 +796,16 @@ func (p *http) isListOk(fCfgItem filedCfg, paramValue interface{}, language stri
 		return nil
 	}
 
-	if fCfgItem.IfMust == "NO" && (paramValue == nil || paramValue == "") {
+	if fCfgItem.IfMust == "NO" && (paramValue == nil || paramValue == "" || paramValue == "[]") {
 		return nil
 	}
 
 	resByte, err1 := json.Marshal(paramValue)
 	var l []interface{}
 	err2 := json.Unmarshal(resByte, &l)
+	if fCfgItem.IfMust == "NO" && err2 == nil && len(l) == 0 {
+		return nil
+	}
 	if paramValue == nil || err1 != nil || err2 != nil || len(l) == 0 {
 		tips := fmt.Sprint(fCfgItem.NullTips)
 		if len(tips) > 0 {
